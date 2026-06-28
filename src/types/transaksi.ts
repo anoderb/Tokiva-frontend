@@ -51,6 +51,7 @@ export interface Transaksi {
   pembayaran?: Pembayaran[];
   nama_kasir?: string;
   nama_member?: string;
+  metode_pembayaran?: string;
 }
 
 /** Detail item di dalam transaksi */

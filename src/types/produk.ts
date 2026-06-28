@@ -69,6 +69,7 @@ export interface Produk {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  foto_embedding?: number[] | number[][] | null;
   // Relasi (opsional, loaded saat butuh)
   kategori?: Kategori;
   pemasok?: Pemasok;

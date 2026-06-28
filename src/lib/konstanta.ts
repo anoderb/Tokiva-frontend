@@ -20,55 +20,55 @@ export interface ItemNavigasi {
 }
 
 export const NAVIGASI_UTAMA: ItemNavigasi[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: '📊' },
+  { label: 'Dashboard', href: '/dashboard', icon: 'HomeIcon' },
   {
     label: 'Kasir',
     href: '/kasir',
-    icon: '🛒',
+    icon: 'CartIcon',
     submenu: [
-      { label: 'Transaksi Baru', href: '/kasir', icon: '➕' },
-      { label: 'Riwayat Transaksi', href: '/kasir/riwayat', icon: '📋' },
+      { label: 'Transaksi Baru', href: '/kasir', icon: 'PlusIcon' },
+      { label: 'Riwayat Transaksi', href: '/kasir/riwayat', icon: 'ReceiptIcon' },
     ],
   },
   {
     label: 'Produk',
     href: '/produk',
-    icon: '📦',
+    icon: 'PackageIcon',
     hanyaAdmin: true,
     submenu: [
-      { label: 'Semua Produk', href: '/produk', icon: '📦' },
-      { label: 'Kategori', href: '/produk/kategori', icon: '🏷️' },
+      { label: 'Semua Produk', href: '/produk', icon: 'PackageIcon' },
+      { label: 'Kategori', href: '/produk/kategori', icon: 'PromoIcon' },
     ],
   },
   {
     label: 'Stok',
     href: '/stok',
-    icon: '📊',
+    icon: 'StockIcon',
     hanyaAdmin: true,
     submenu: [
-      { label: 'Stok Saat Ini', href: '/stok', icon: '📊' },
-      { label: 'Barang Masuk', href: '/stok/masuk', icon: '📥' },
-      { label: 'Stok Opname', href: '/stok/opname', icon: '📋' },
-      { label: 'Kadaluarsa', href: '/stok/kadaluarsa', icon: '⏰' },
+      { label: 'Stok Saat Ini', href: '/stok', icon: 'StockIcon' },
+      { label: 'Barang Masuk', href: '/stok/masuk', icon: 'PlusIcon' },
+      { label: 'Stok Opname', href: '/stok/opname', icon: 'ReceiptIcon' },
+      { label: 'Kadaluarsa', href: '/stok/kadaluarsa', icon: 'ShiftIcon' },
     ],
   },
-  { label: 'Bon / Piutang', href: '/bon', icon: '💰' },
-  { label: 'Pelanggan', href: '/pelanggan', icon: '👥' },
-  { label: 'Pemasok', href: '/pemasok', icon: '🚚', hanyaAdmin: true },
-  { label: 'Laporan', href: '/laporan', icon: '📈', hanyaAdmin: true },
-  { label: 'Diskon & Promo', href: '/diskon', icon: '🏷️', hanyaAdmin: true },
-  { label: 'Shift', href: '/shift', icon: '⏱️' },
-  { label: 'Notifikasi', href: '/notifikasi', icon: '🔔' },
-  { label: 'Pengaturan', href: '/pengaturan', icon: '⚙️', hanyaAdmin: true },
+  { label: 'Bon / Piutang', href: '/bon', icon: 'ReceiptIcon' },
+  { label: 'Pelanggan', href: '/pelanggan', icon: 'UsersIcon' },
+  { label: 'Pemasok', href: '/pemasok', icon: 'TruckIcon', hanyaAdmin: true },
+  { label: 'Laporan', href: '/laporan', icon: 'ReportIcon', hanyaAdmin: true },
+  { label: 'Diskon & Promo', href: '/diskon', icon: 'PromoIcon', hanyaAdmin: true },
+  { label: 'Shift', href: '/shift', icon: 'ShiftIcon' },
+  { label: 'Notifikasi', href: '/notifikasi', icon: 'BellIcon' },
+  { label: 'Pengaturan', href: '/pengaturan', icon: 'SettingsIcon', hanyaAdmin: true },
 ];
 
 /** Navigasi bottom tab untuk mobile (hanya 5 item utama) */
 export const NAVIGASI_MOBILE: ItemNavigasi[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: '📊' },
-  { label: 'Kasir', href: '/kasir', icon: '🛒' },
-  { label: 'Produk', href: '/produk', icon: '📦' },
-  { label: 'Stok', href: '/stok', icon: '📊' },
-  { label: 'Lainnya', href: '#', icon: '☰' },
+  { label: 'Dashboard', href: '/dashboard', icon: 'HomeIcon' },
+  { label: 'Kasir', href: '/kasir', icon: 'CartIcon' },
+  { label: 'Produk', href: '/produk', icon: 'PackageIcon' },
+  { label: 'Stok', href: '/stok', icon: 'StockIcon' },
+  { label: 'Lainnya', href: '#', icon: 'MenuIcon' },
 ];
 
 /** Opsi satuan produk */
@@ -85,11 +85,11 @@ export const OPSI_SATUAN = [
 
 /** Opsi metode pembayaran */
 export const OPSI_METODE_BAYAR = [
-  { nilai: 'tunai', label: 'Tunai', icon: '💵' },
-  { nilai: 'qris', label: 'QRIS', icon: '📱' },
-  { nilai: 'transfer', label: 'Transfer', icon: '🏦' },
-  { nilai: 'bon', label: 'Bon', icon: '📋' },
-  { nilai: 'voucher', label: 'Voucher', icon: '🎟️' },
+  { nilai: 'tunai', label: 'Tunai', icon: 'tunai' },
+  { nilai: 'qris', label: 'QRIS', icon: 'qris' },
+  { nilai: 'transfer', label: 'Transfer', icon: 'transfer' },
+  { nilai: 'bon', label: 'Bon', icon: 'bon' },
+  { nilai: 'voucher', label: 'Voucher', icon: 'voucher' },
 ] as const;
 
 /** Sapaan berdasarkan jam */
