@@ -186,7 +186,18 @@ export default function HalamanDashboard() {
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Transaksi Baru', href: '/kasir', icon: Icons.PlusIcon, desc: 'Menu Checkout Kasir', disabled: !activeShift },
+              { 
+                label: 'Transaksi Baru', 
+                href: '/kasir', 
+                icon: Icons.PlusIcon, 
+                desc: 'Menu Checkout Kasir', 
+                disabled: !activeShift,
+                onClick: () => {
+                  if (!activeShift) {
+                    alert("Shift kasir belum dibuka! Silakan buka shift terlebih dahulu di halaman Kelola Shift.");
+                  }
+                }
+              },
               { label: 'Riwayat Transaksi', href: '/kasir/riwayat', icon: Icons.ReceiptIcon, desc: 'Cek struk & penjualan' },
               { label: 'Daftar Pelanggan', href: '/pelanggan', icon: Icons.UsersIcon, desc: 'Cari & daftar member' },
               { label: 'Kelola Kasbon', href: '/bon', icon: Icons.PromoIcon, desc: 'Piutang & cicilan member' },
@@ -196,6 +207,12 @@ export default function HalamanDashboard() {
                 <Link
                   key={act.label}
                   href={act.disabled ? '#' : act.href}
+                  onClick={(e) => {
+                    if (act.disabled) {
+                      e.preventDefault();
+                      if (act.onClick) act.onClick();
+                    }
+                  }}
                   className={`flex flex-col items-center text-center p-4 rounded-xl transition-all border ${
                     act.disabled 
                       ? 'opacity-40 cursor-not-allowed border-zinc-200' 
