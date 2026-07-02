@@ -62,22 +62,22 @@ export default function HalamanDashboard() {
     fetchDashboardData();
   }, [pengguna]);
 
-  const omzetHariIni = summary?.penjualan_hari_ini ?? 2450000;
-  const transaksiHariIni = summary?.jumlah_transaksi_hari_ini ?? 32;
-  const rataRataTransaksi = transaksiHariIni > 0 ? (omzetHariIni / transaksiHariIni) : 76562;
-  const labaHariIni = summary ? (omzetHariIni * 0.15) : 450000; // Estimasi laba bersih 15%
+  const omzetHariIni = summary?.penjualan_hari_ini ?? 0;
+  const transaksiHariIni = summary?.jumlah_transaksi_hari_ini ?? 0;
+  const rataRataTransaksi = transaksiHariIni > 0 ? (omzetHariIni / transaksiHariIni) : 0;
+  const labaHariIni = summary ? (omzetHariIni * 0.15) : 0; // Estimasi laba bersih 15%
 
   const dataChart = summary?.grafik_penjualan_7_hari?.map((d: any) => ({
     hari: d.tanggal,
-    omzet: d.nominal
+    omzet: Number(d.nominal)
   })) ?? [
-    { hari: 'Sen', omzet: 1800000 },
-    { hari: 'Sel', omzet: 2100000 },
-    { hari: 'Rab', omzet: 2800000 },
-    { hari: 'Kam', omzet: 1500000 },
-    { hari: 'Jum', omzet: 3200000 },
-    { hari: 'Sab', omzet: 2650000 },
-    { hari: 'Min', omzet: 2450000 },
+    { hari: 'Sen', omzet: 0 },
+    { hari: 'Sel', omzet: 0 },
+    { hari: 'Rab', omzet: 0 },
+    { hari: 'Kam', omzet: 0 },
+    { hari: 'Jum', omzet: 0 },
+    { hari: 'Sab', omzet: 0 },
+    { hari: 'Min', omzet: 0 },
   ];
   const maxOmzet = Math.max(...dataChart.map((d: any) => d.omzet)) || 1;
 
