@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import TabBawah from './TabBawah';
+import ChatbotWidget from '../ui/ChatbotWidget';
 
 export default function LayoutUtama({ children }: { children: React.ReactNode }) {
   const { pengguna, sedangMemuat } = useAuth();
@@ -76,6 +77,9 @@ export default function LayoutUtama({ children }: { children: React.ReactNode })
 
       {/* Bottom Tab Mobile */}
       <TabBawah onToggleSidebar={() => setMobileSidebarOpen(true)} />
+
+      {/* Chatbot Widget */}
+      <ChatbotWidget />
     </div>
   );
 }

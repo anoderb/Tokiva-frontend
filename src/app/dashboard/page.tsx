@@ -8,10 +8,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { getStatusStok } from '@/types/produk';
 import * as Icons from '@/components/ui/Icons';
 
-const produkTerlaris = [
-  { nama: 'Beras Pandan Wangi 5kg', terjual: 12 },
-  { nama: 'Teh Botol Sosro 350ml', terjual: 9 },
-];
 
 export default function HalamanDashboard() {
   const { produkList, pelangganList } = useData();
@@ -104,11 +100,8 @@ export default function HalamanDashboard() {
     }))
     .slice(0, 5);
 
-  const listBonTampil = bonJatuhTempo.length > 0 ? bonJatuhTempo : [
-    { nama: 'Budi Prasetyo', nominal: 250000, jatuhTempo: '2026-06-30', status: 'aktif' as const },
-    { nama: 'Ani Suryani', nominal: 180000, jatuhTempo: '2026-06-25', status: 'aktif' as const },
-    { nama: 'Joko Widodo', nominal: 150000, jatuhTempo: '2026-04-15', status: 'macet' as const },
-  ];
+  const listBonTampil = summary?.bon_jatuh_tempo ?? bonJatuhTempo;
+  const produkTerlarisList = summary?.produk_terlaris ?? [];
 
   if (!isAdmin) {
     return (
@@ -273,22 +266,28 @@ export default function HalamanDashboard() {
               <Icons.ReceiptIcon size={16} className="text-red-500" /> Bon Jatuh Tempo
             </h2>
             <div className="space-y-2.5">
-              {listBonTampil.map((b) => (
-                <div key={b.nama} className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-dot" style={{ background: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                      {b.nama}
-                    </p>
-                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                      Jatuh tempo: {formatTanggal(b.jatuhTempo)}
-                    </p>
+              {listBonTampil.length === 0 ? (
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-zinc-400" /> Tidak ada bon jatuh tempo
+                </p>
+              ) : (
+                listBonTampil.map((b: any) => (
+                  <div key={b.nama} className="flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-dot" style={{ background: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                        {b.nama}
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        Jatuh tempo: {b.jatuhTempo ? formatTanggal(b.jatuhTempo) : 'Belum diatur'}
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold" style={{ color: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }}>
+                      {formatRupiah(b.nominal)}
+                    </span>
                   </div>
-                  <span className="text-sm font-bold" style={{ color: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }}>
-                    {formatRupiah(b.nominal)}
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -404,25 +403,31 @@ export default function HalamanDashboard() {
             <Icons.PromoIcon className="text-teal-500" size={16} /> Produk Terlaris (7 hari)
           </h2>
           <div className="space-y-3">
-            {produkTerlaris.map((p, i) => (
-              <div key={p.nama} className="flex items-center gap-3">
-                <span
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                  style={{
-                    background: i < 3 ? 'var(--primary)' : 'var(--surface-hover)',
-                    color: i < 3 ? 'white' : 'var(--text-tertiary)',
-                  }}
-                >
-                  {i + 1}
-                </span>
-                <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                  {p.nama}
-                </span>
-                <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
-                  {p.terjual}x
-                </span>
-              </div>
-            ))}
+            {produkTerlarisList.length === 0 ? (
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-zinc-400" /> Belum ada penjualan
+              </p>
+            ) : (
+              produkTerlarisList.map((p: any, i: number) => (
+                <div key={p.nama} className="flex items-center gap-3">
+                  <span
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{
+                      background: i < 3 ? 'var(--primary)' : 'var(--surface-hover)',
+                      color: i < 3 ? 'white' : 'var(--text-tertiary)',
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                    {p.nama}
+                  </span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                    {p.terjual}x
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -476,22 +481,28 @@ export default function HalamanDashboard() {
             <Icons.ReceiptIcon size={16} className="text-red-500" /> Bon Jatuh Tempo
           </h2>
           <div className="space-y-2.5">
-            {listBonTampil.map((b) => (
-              <div key={b.nama} className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-dot" style={{ background: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                    {b.nama}
-                  </p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                    Jatuh tempo: {formatTanggal(b.jatuhTempo)}
-                  </p>
+            {listBonTampil.length === 0 ? (
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-zinc-400" /> Tidak ada bon jatuh tempo
+              </p>
+            ) : (
+              listBonTampil.map((b: any) => (
+                <div key={b.nama} className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full shrink-0 animate-pulse-dot" style={{ background: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                      {b.nama}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                      Jatuh tempo: {b.jatuhTempo ? formatTanggal(b.jatuhTempo) : 'Belum diatur'}
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold" style={{ color: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }}>
+                    {formatRupiah(b.nominal)}
+                  </span>
                 </div>
-                <span className="text-sm font-bold" style={{ color: b.status === 'macet' ? 'var(--danger)' : 'var(--warning)' }}>
-                  {formatRupiah(b.nominal)}
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

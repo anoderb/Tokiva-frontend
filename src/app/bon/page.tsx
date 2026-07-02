@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useData } from '@/hooks/useData';
 import { formatRupiah } from '@/lib/format_rupiah';
@@ -23,10 +23,39 @@ export default function ManajemenBon() {
   const [nominalBayar, setNominalBayar] = useState('');
   const [metodeBayar, setMetodeBayar] = useState<'tunai' | 'transfer'>('tunai');
   const [catatanCicilan, setCatatanCicilan] = useState('');
-  const [riwayatCicilan, setRiwayatCicilan] = useState<{ tanggal: string; nama: string; nominal: number; metode: string }[]>([
-    { tanggal: '2026-06-20 14:32', nama: 'Budi Prasetyo', nominal: 100000, metode: 'tunai' },
-    { tanggal: '2026-06-22 09:15', nama: 'Ani Suryani', nominal: 50000, metode: 'transfer' },
-  ]);
+  const [riwayatCicilan, setRiwayatCicilan] = useState<{ tanggal: string; nama: string; nominal: number; metode: string }[]>([]);
+
+  const fetchRiwayat = async () => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const authDataStr = localStorage.getItem('tokiva_auth');
+      let token = '';
+      if (authDataStr) {
+        try {
+          const authData = JSON.parse(authDataStr);
+          token = authData.access_token || '';
+        } catch {}
+      }
+
+      const resp = await fetch(`${baseUrl}/api/bon/cicilan/terakhir`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.sukses && Array.isArray(json.data)) {
+          setRiwayatCicilan(json.data);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching cicilan history:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRiwayat();
+  }, []);
 
   // Filters & Pagination States
   const [sortKey, setSortKey] = useState<string>('bon-desc');
@@ -102,7 +131,7 @@ export default function ManajemenBon() {
     return pelangganList.find((p) => p.id === pelangganDipilih) || null;
   }, [pelangganList, pelangganDipilih]);
 
-  function handleBayarBon(e: React.FormEvent) {
+  async function handleBayarBon(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPelangganObj || !nominalBayar) return;
 
@@ -112,22 +141,49 @@ export default function ManajemenBon() {
       return;
     }
 
-    const sisaBon = selectedPelangganObj.total_bon - nominal;
-    updatePelanggan(selectedPelangganObj.id, {
-      total_bon: sisaBon,
-    });
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const authDataStr = localStorage.getItem('tokiva_auth');
+      let token = '';
+      if (authDataStr) {
+        try {
+          const authData = JSON.parse(authDataStr);
+          token = authData.access_token || '';
+        } catch {}
+      }
 
-    // Add to local mock history
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
-    setRiwayatCicilan((prev) => [
-      {
-        tanggal: nowStr,
-        nama: selectedPelangganObj.nama,
-        nominal: nominal,
-        metode: metodeBayar,
-      },
-      ...prev,
-    ]);
+      const resp = await fetch(`${baseUrl}/api/bon/member/${selectedPelangganObj.id}/bayar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          nominal,
+          metode: metodeBayar,
+        }),
+      });
+
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.sukses) {
+          const sisaBon = selectedPelangganObj.total_bon - nominal;
+          updatePelanggan(selectedPelangganObj.id, {
+            total_bon: sisaBon,
+          });
+
+          await fetchRiwayat();
+          alert('Pembayaran cicilan berhasil disimpan.');
+        } else {
+          alert('Gagal menyimpan cicilan: ' + (json.pesan || 'Error'));
+        }
+      } else {
+        alert('Gagal mengirim data cicilan ke server.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Terjadi kesalahan koneksi.');
+    }
 
     setPelangganDipilih(null);
     setNominalBayar('');

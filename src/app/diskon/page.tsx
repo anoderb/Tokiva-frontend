@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useData } from '@/hooks/useData';
 import { formatRupiah } from '@/lib/format_rupiah';
 import { PlusIcon, EditIcon, TrashIcon, CloseIcon } from '@/components/ui/Icons';
@@ -27,11 +27,63 @@ export default function DiskonPromo() {
   const [tampilModal, setTampilModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
 
-  // Mock Promos
-  const [promos, setPromos] = useState<Promo[]>([
-    { id: 1, nama: 'Promo Pembukaan Toko', tipe: 'persentase', nilai: 10, minBelanja: 50000, tglMulai: '2026-06-01', tglSelesai: '2026-07-31', aktif: true },
-    { id: 2, nama: 'Potongan Langsung Jumat Berkah', tipe: 'nominal', nilai: 5000, minBelanja: 75000, tglMulai: '2026-06-01', tglSelesai: '2026-12-31', aktif: true },
-  ]);
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [sedangMemuat, setSedangMemuat] = useState(true);
+
+  // Authenticated API request helper
+  const fetchWithAuth = async (path: string, options: RequestInit = {}) => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const authDataStr = localStorage.getItem('tokiva_auth');
+    let token = '';
+    if (authDataStr) {
+      try {
+        const authData = JSON.parse(authDataStr);
+        token = authData.access_token || '';
+      } catch {}
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...options.headers,
+    };
+
+    return fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers,
+    });
+  };
+
+  const loadPromos = async () => {
+    try {
+      setSedangMemuat(true);
+      const resp = await fetchWithAuth('/api/diskon');
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.sukses && Array.isArray(json.data)) {
+          const mapped: Promo[] = json.data.map((d: any) => ({
+            id: d.id,
+            nama: d.nama,
+            tipe: d.tipe === 'total_persen' ? 'persentase' : 'nominal',
+            nilai: Number(d.nilai),
+            minBelanja: Number(d.min_belanja),
+            tglMulai: d.tgl_mulai ? d.tgl_mulai.split('T')[0] : '',
+            tglSelesai: d.tgl_selesai ? d.tgl_selesai.split('T')[0] : '',
+            aktif: d.is_aktif === 1,
+          }));
+          setPromos(mapped);
+        }
+      }
+    } catch (e) {
+      console.error('Gagal memuat diskon:', e);
+    } finally {
+      setSedangMemuat(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPromos();
+  }, []);
 
   // Filters & Pagination States
   const [pencarian, setPencarian] = useState('');
@@ -118,34 +170,71 @@ export default function DiskonPromo() {
   }
 
   // Form submit handler
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!nama || !nilai) return;
 
-    const payload: Promo = {
-      id: editId === null ? Date.now() : editId,
+    const payload = {
       nama,
-      tipe,
+      tipe: tipe === 'persentase' ? 'total_persen' : 'total_nominal',
       nilai: parseFloat(nilai) || 0,
-      minBelanja: parseFloat(minBelanja) || 0,
-      tglMulai: tglMulai || new Date().toISOString().slice(0, 10),
-      tglSelesai: tglSelesai || new Date().toISOString().slice(0, 10),
-      aktif,
+      min_belanja: parseFloat(minBelanja) || 0,
+      tgl_mulai: tglMulai || new Date().toISOString().slice(0, 10),
+      tgl_selesai: tglSelesai || new Date().toISOString().slice(0, 10),
+      is_aktif: aktif ? 1 : 0,
     };
 
-    if (editId === null) {
-      setPromos((prev) => [...prev, payload]);
-    } else {
-      setPromos((prev) => prev.map((p) => (p.id === editId ? payload : p)));
-    }
+    try {
+      setSedangMemuat(true);
+      let resp;
+      if (editId === null) {
+        resp = await fetchWithAuth('/api/diskon', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        resp = await fetchWithAuth(`/api/diskon/${editId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      }
 
-    setTampilModal(false);
+      if (resp.ok) {
+        setTampilModal(false);
+        await loadPromos();
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        alert(errJson?.pesan || 'Gagal menyimpan diskon');
+      }
+    } catch (err) {
+      console.error('Error saving diskon:', err);
+      alert('Terjadi kesalahan koneksi');
+    } finally {
+      setSedangMemuat(false);
+    }
   }
 
   // Handle delete
-  function handleDelete(id: number) {
-    if (confirm('Apakah Anda yakin ingin menghapus promo ini?')) {
-      setPromos((prev) => prev.filter((p) => p.id !== id));
+  async function handleDelete(id: number) {
+    if (!confirm('Apakah Anda yakin ingin menghapus promo ini?')) return;
+
+    try {
+      setSedangMemuat(true);
+      const resp = await fetchWithAuth(`/api/diskon/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (resp.ok) {
+        await loadPromos();
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        alert(errJson?.pesan || 'Gagal menghapus diskon');
+      }
+    } catch (err) {
+      console.error('Error deleting diskon:', err);
+      alert('Terjadi kesalahan koneksi');
+    } finally {
+      setSedangMemuat(false);
     }
   }  return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -284,70 +373,83 @@ export default function DiskonPromo() {
                   </td>
                 </tr>
               ))}
+              {listFiltered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-10 font-medium text-zinc-400">
+                    Belum ada promosi atau diskon yang terdaftar.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Card List Mobile */}
         <div className="block md:hidden divide-y animate-fade-in" style={{ borderColor: 'var(--border)' }}>
-          {listPaginasi.map((p) => (
-            <div key={p.id} className="p-4 space-y-3 hover:opacity-95 transition-opacity" style={{ color: 'var(--text-primary)' }}>
-              {/* Header: Nama Promosi & Status */}
-              <div className="flex justify-between items-start gap-2">
-                <div>
-                  <h3 className="font-bold text-xs sm:text-sm leading-tight">{p.nama}</h3>
-                  <p className="text-[9px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    ID Promo: {p.id}
-                  </p>
-                </div>
-                <span
-                  className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0"
-                  style={{
-                    background: p.aktif ? 'var(--success-light)' : 'var(--danger-light)',
-                    color: p.aktif ? 'var(--success)' : 'var(--danger)',
-                  }}
-                >
-                  {p.aktif ? 'Aktif' : 'Nonaktif'}
-                </span>
-              </div>
-
-              {/* Detail Info: Nilai Potongan, Min Belanja, Masa Berlaku */}
-              <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-lg text-[10px] sm:text-xs" style={{ background: 'var(--bg)' }}>
-                <div>
-                  <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Nilai Potongan</p>
-                  <p className="font-bold mt-0.5" style={{ color: 'var(--primary)' }}>
-                    {p.tipe === 'persentase' ? `${p.nilai}%` : formatRupiah(p.nilai)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Min. Belanja</p>
-                  <p className="font-semibold mt-0.5">{formatRupiah(p.minBelanja)}</p>
-                </div>
-                <div className="col-span-2 border-t pt-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
-                  <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Masa Berlaku</p>
-                  <p className="font-semibold mt-0.5" style={{ color: 'var(--text-secondary)' }}>{p.tglMulai} s/d {p.tglSelesai}</p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => bukaEdit(p.id)}
-                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-1 hover:opacity-80"
-                  style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                >
-                  <EditIcon size={12} /> Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(p.id)}
-                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-colors flex items-center gap-1"
-                  style={{ background: 'var(--danger)' }}
-                >
-                  <TrashIcon size={12} /> Hapus
-                </button>
-              </div>
+          {listFiltered.length === 0 ? (
+            <div className="text-center py-10 font-medium text-zinc-400 text-xs">
+              Belum ada promosi atau diskon yang terdaftar.
             </div>
-          ))}
+          ) : (
+            listPaginasi.map((p) => (
+              <div key={p.id} className="p-4 space-y-3 hover:opacity-95 transition-opacity" style={{ color: 'var(--text-primary)' }}>
+                {/* Header: Nama Promosi & Status */}
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <h3 className="font-bold text-xs sm:text-sm leading-tight">{p.nama}</h3>
+                    <p className="text-[9px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                      ID Promo: {p.id}
+                    </p>
+                  </div>
+                  <span
+                    className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0"
+                    style={{
+                      background: p.aktif ? 'var(--success-light)' : 'var(--danger-light)',
+                      color: p.aktif ? 'var(--success)' : 'var(--danger)',
+                    }}
+                  >
+                    {p.aktif ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </div>
+
+                {/* Detail Info: Nilai Potongan, Min Belanja, Masa Berlaku */}
+                <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-lg text-[10px] sm:text-xs" style={{ background: 'var(--bg)' }}>
+                  <div>
+                    <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Nilai Potongan</p>
+                    <p className="font-bold mt-0.5" style={{ color: 'var(--primary)' }}>
+                      {p.tipe === 'persentase' ? `${p.nilai}%` : formatRupiah(p.nilai)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Min. Belanja</p>
+                    <p className="font-semibold mt-0.5">{formatRupiah(p.minBelanja)}</p>
+                  </div>
+                  <div className="col-span-2 border-t pt-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Masa Berlaku</p>
+                    <p className="font-semibold mt-0.5" style={{ color: 'var(--text-secondary)' }}>{p.tglMulai} s/d {p.tglSelesai}</p>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => bukaEdit(p.id)}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-1 hover:opacity-80"
+                    style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                  >
+                    <EditIcon size={12} /> Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(p.id)}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white transition-colors flex items-center gap-1"
+                    style={{ background: 'var(--danger)' }}
+                  >
+                    <TrashIcon size={12} /> Hapus
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Pagination Footer */}

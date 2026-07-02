@@ -58,6 +58,12 @@ interface DataContextType {
   // Transaksi Actions
   tambahTransaksi: (t: Omit<Transaksi, 'id' | 'created_at' | 'deleted_at'>) => void;
 
+  // Shift Actions
+  shiftAktif: any | null;
+  setShiftAktif: React.Dispatch<React.SetStateAction<any | null>>;
+  bukaShift: (modalAwal: number, catatan: string | null) => Promise<{ sukses: boolean; data?: any; pesan?: string }>;
+  tutupShift: (modalAkhirFisik: number, catatan: string | null) => Promise<{ sukses: boolean; data?: any; pesan?: string }>;
+
   // Stok Actions
   tambahStokMasuk: (produkId: number, qty: number, hargaBeli: number, supplierId: number | null, expiredDate: string | null, catatan: string | null) => void;
   opnameStok: (produkId: number, qtyFisik: number, catatan: string | null) => void;
@@ -76,6 +82,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [hargaTingkatList, setHargaTingkatList] = useState<HargaTingkat[]>([]);
   const [transaksiList, setTransaksiList] = useState<Transaksi[]>([]);
   const [stokBatchList, setStokBatchList] = useState<StokBatch[]>([]);
+  const [shiftAktif, setShiftAktif] = useState<any | null>(null);
   const [readNotificationKeys, setReadNotificationKeys] = useState<string[]>([]);
 
   // Authenticated API request helper
@@ -182,6 +189,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(STORAGE_PREFIX + 'stok_batch', JSON.stringify(batchJson.data));
         }
       }
+
+      // 7. Fetch Active Shift
+      const shiftResp = await fetchWithAuth('/api/shift/aktif');
+      if (shiftResp.ok) {
+        const shiftJson = await shiftResp.json();
+        if (shiftJson.sukses && shiftJson.data) {
+          const shiftData = {
+            id: shiftJson.data.id,
+            kasir: shiftJson.data.user?.nama || 'Kasir',
+            waktuBuka: shiftJson.data.waktu_buka,
+            waktuTutup: null,
+            modalAwal: Number(shiftJson.data.modal_awal),
+            uangSistem: Number(shiftJson.data.modal_awal),
+            uangFisik: null,
+            selisih: null,
+            status: 'buka',
+          };
+          setShiftAktif(shiftData);
+          localStorage.setItem('tokiva_shift_aktif', JSON.stringify(shiftData));
+        } else {
+          setShiftAktif(null);
+          localStorage.removeItem('tokiva_shift_aktif');
+        }
+      } else {
+        setShiftAktif(null);
+        localStorage.removeItem('tokiva_shift_aktif');
+      }
     } catch (err) {
       console.error('Gagal menyinkronkan data dengan backend:', err);
     }
@@ -214,6 +248,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setHargaTingkatList(h ? JSON.parse(h) : []);
       setTransaksiList(t ? JSON.parse(t) : []);
       setStokBatchList(b ? JSON.parse(b) : []);
+
+      const activeShiftStr = localStorage.getItem('tokiva_shift_aktif');
+      if (activeShiftStr) {
+        setShiftAktif(JSON.parse(activeShiftStr));
+      }
       
       const rnKeys = localStorage.getItem('tokiva_read_notification_keys');
       setReadNotificationKeys(rnKeys ? JSON.parse(rnKeys) : []);
@@ -886,6 +925,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
+  const bukaShift = useCallback(async (modalAwal: number, catatan: string | null) => {
+    try {
+      const resp = await fetchWithAuth('/api/shift/buka', {
+        method: 'POST',
+        body: JSON.stringify({ modal_awal: modalAwal, catatan }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        return { sukses: true, data: json.data };
+      }
+      const errJson = await resp.json().catch(() => null);
+      return { sukses: false, pesan: errJson?.pesan || 'Gagal membuka shift di backend' };
+    } catch (e) {
+      console.error('Gagal membuka shift:', e);
+      return { sukses: false, pesan: 'Koneksi gagal atau offline' };
+    }
+  }, [fetchWithAuth]);
+
+  const tutupShift = useCallback(async (modalAkhirFisik: number, catatan: string | null) => {
+    try {
+      const resp = await fetchWithAuth('/api/shift/tutup', {
+        method: 'POST',
+        body: JSON.stringify({ modal_akhir_fisik: modalAkhirFisik, catatan }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        return { sukses: true, data: json.data };
+      }
+      const errJson = await resp.json().catch(() => null);
+      return { sukses: false, pesan: errJson?.pesan || 'Gagal menutup shift di backend' };
+    } catch (e) {
+      console.error('Gagal menutup shift:', e);
+      return { sukses: false, pesan: 'Koneksi gagal atau offline' };
+    }
+  }, [fetchWithAuth]);
+
   // Stok Actions
   const tambahStokMasuk = useCallback(async (
     produkId: number,
@@ -1029,6 +1104,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         updatePemasok,
         hapusPemasok,
         tambahTransaksi,
+        shiftAktif,
+        setShiftAktif,
+        bukaShift,
+        tutupShift,
         tambahStokMasuk,
         opnameStok,
       }}

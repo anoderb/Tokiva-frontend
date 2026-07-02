@@ -6,6 +6,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { formatRupiah } from '@/lib/format_rupiah';
 import { useData } from '@/hooks/useData';
 import type { ItemKeranjang, MetodePembayaran, TransaksiDetail } from '@/types/transaksi';
@@ -37,12 +38,15 @@ function getHarga(produk: Produk, qty: number, hargaTingkatList: HargaTingkat[])
 }
 
 export default function HalamanKasir() {
+  const router = useRouter();
+
   const {
     produkList,
     kategoriList,
     pelangganList,
     hargaTingkatList,
     tambahTransaksi,
+    shiftAktif,
   } = useData();
 
   const [pencarian, setPencarian] = useState('');
@@ -452,7 +456,7 @@ export default function HalamanKasir() {
 
   // Total keranjang
   const totalKeranjang = useMemo(() => {
-    return keranjang.reduce((sum, item) => sum + item.subtotal, 0);
+    return keranjang.reduce((sum, item) => sum + Number(item.subtotal), 0);
   }, [keranjang]);
 
   const totalItem = useMemo(() => {
@@ -488,9 +492,9 @@ export default function HalamanKasir() {
           foto_url: produk.foto_url,
           qty: 1,
           satuan: produk.satuan,
-          harga_satuan: harga,
+          harga_satuan: Number(harga),
           diskon_item: 0,
-          subtotal: harga,
+          subtotal: Number(harga),
           diskon_id: null,
           batch_id: null,
           stok_tersedia: produk.stok,
@@ -516,7 +520,7 @@ export default function HalamanKasir() {
     setKeranjang((prev) =>
       prev.map((item) =>
         item.produk_id === produkId
-          ? { ...item, qty: newQty, harga_satuan: harga, subtotal: newQty * harga }
+          ? { ...item, qty: newQty, harga_satuan: Number(harga), subtotal: newQty * Number(harga) }
           : item
       )
     );
@@ -566,6 +570,13 @@ export default function HalamanKasir() {
       kembalian: Math.max(0, kembalian),
       status: metodeBayar === 'bon' ? 'bon' : 'lunas',
       metode_pembayaran: metodeBayar,
+      pembayaran: [
+        {
+          metode: metodeBayar,
+          nominal: parseFloat(nominalBayar) || totalKeranjang,
+          referensi: null,
+        }
+      ],
       is_synced: false,
       sync_at: null,
       local_id: null,
@@ -1436,6 +1447,46 @@ export default function HalamanKasir() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Shift belum dibuka modal overlay */}
+      {!shiftAktif && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md bg-black/60 transition-all duration-300"
+        >
+          <div 
+            className="w-full max-w-md p-8 rounded-2xl border text-center shadow-2xl animate-fade-in"
+            style={{
+              background: 'var(--surface)',
+              borderColor: 'var(--border)',
+            }}
+          >
+            <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-5 animate-pulse">
+              ⚠️
+            </div>
+            
+            <h3 
+              className="text-lg font-black tracking-tight mb-2"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              SHIFT KASIR BELUM DIBUKA!
+            </h3>
+            
+            <p 
+              className="text-xs mb-6 leading-relaxed"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Anda tidak dapat memproses transaksi penjualan sebelum membuka shift register. Silakan masukkan modal awal dan aktifkan shift kasir Anda terlebih dahulu.
+            </p>
+            
+            <button
+              onClick={() => router.push('/shift')}
+              className="w-full py-3.5 rounded-xl text-xs font-bold text-white uppercase tracking-wider bg-teal-600 hover:bg-teal-700 active:scale-98 transition-all shadow-lg shadow-teal-600/10 hover:shadow-teal-600/20 cursor-pointer"
+            >
+              🔓 Buka Shift Sekarang
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -72,12 +72,12 @@ export interface TransaksiDetail {
 
 /** Pembayaran per metode */
 export interface Pembayaran {
-  id: number;
-  transaksi_id: number;
+  id?: number;
+  transaksi_id?: number;
   metode: MetodePembayaran;
   nominal: number;
   referensi: string | null;
-  created_at: string;
+  created_at?: string;
 }
 
 /** Bon / Piutang */

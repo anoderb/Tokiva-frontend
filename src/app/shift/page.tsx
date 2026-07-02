@@ -25,11 +25,10 @@ interface RiwayatShift {
 }
 
 export default function ShiftKasir() {
-  const { transaksiList } = useData();
+  const { transaksiList, shiftAktif, setShiftAktif, bukaShift, tutupShift } = useData();
   const { isAdmin, pengguna } = useAuth();
 
   // Shift state in localStorage
-  const [shiftAktif, setShiftAktif] = useState<RiwayatShift | null>(null);
   const [riwayatList, setRiwayatList] = useState<RiwayatShift[]>([]);
 
   // Filter history list for cashier
@@ -48,19 +47,16 @@ export default function ShiftKasir() {
 
   // Load shift from localStorage
   useEffect(() => {
-    const active = localStorage.getItem('tokiva_shift_aktif');
     const hist = localStorage.getItem('tokiva_shift_riwayat');
-    
-    if (active) setShiftAktif(JSON.parse(active));
     if (hist) {
-      setRiwayatList(JSON.parse(hist));
+      const parsed = JSON.parse(hist);
+      // Bersihkan data ghoib Budi Santoso & Ani Wulandari jika masih tersimpan di local
+      const cleaned = parsed.filter((r: RiwayatShift) => r.kasir !== 'Budi Santoso' && r.kasir !== 'Ani Wulandari');
+      setRiwayatList(cleaned);
+      localStorage.setItem('tokiva_shift_riwayat', JSON.stringify(cleaned));
     } else {
-      const defaultHist: RiwayatShift[] = [
-        { id: 1, kasir: 'Budi Santoso', waktuBuka: '2026-06-24 07:00', waktuTutup: '2026-06-24 15:00', modalAwal: 100000, uangSistem: 1250000, uangFisik: 1250000, selisih: 0, status: 'tutup' },
-        { id: 2, kasir: 'Ani Wulandari', waktuBuka: '2026-06-24 15:00', waktuTutup: '2026-06-24 22:00', modalAwal: 100000, uangSistem: 980000, uangFisik: 975000, selisih: -5000, status: 'tutup' },
-      ];
-      setRiwayatList(defaultHist);
-      localStorage.setItem('tokiva_shift_riwayat', JSON.stringify(defaultHist));
+      setRiwayatList([]);
+      localStorage.setItem('tokiva_shift_riwayat', JSON.stringify([]));
     }
   }, []);
 
@@ -78,13 +74,13 @@ export default function ShiftKasir() {
       transaksiList.forEach((tx) => {
         const tglTx = new Date(tx.created_at);
         if (tglTx >= tglBuka) {
-          total += tx.total;
+          total += Number(tx.total);
           if (tx.status === 'bon') {
-            bon += (tx.total - tx.bayar);
-            tunai += tx.bayar; // any cash down payment
+            bon += (Number(tx.total) - Number(tx.bayar));
+            tunai += Number(tx.bayar); // any cash down payment
           } else {
             // Assume payments method
-            tunai += tx.total; // Defaulting to cash since simplified, but can map if we had billing info
+            tunai += Number(tx.total); // Defaulting to cash since simplified, but can map if we had billing info
           }
         }
       });
@@ -95,7 +91,7 @@ export default function ShiftKasir() {
 
   const uangSistem = useMemo(() => {
     if (!shiftAktif) return 0;
-    return shiftAktif.modalAwal + statsHariIni.tunai; // Starting cash + cash sales
+    return Number(shiftAktif.modalAwal) + Number(statsHariIni.tunai); // Starting cash + cash sales
   }, [shiftAktif, statsHariIni.tunai]);
 
   const selisihUang = useMemo(() => {
@@ -104,13 +100,20 @@ export default function ShiftKasir() {
   }, [uangFisikInput, uangSistem]);
 
   // Buka Shift
-  function handleBukaShift(e: React.FormEvent) {
+  async function handleBukaShift(e: React.FormEvent) {
     e.preventDefault();
     const modal = parseFloat(modalAwalInput) || 0;
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
     
+    // Call backend API
+    const res = await bukaShift(modal, 'Buka shift register');
+    if (!res.sukses) {
+      alert(res.pesan);
+      return;
+    }
+
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
     const newShift: RiwayatShift = {
-      id: Date.now(),
+      id: res.data?.id || Date.now(),
       kasir: pengguna?.nama || 'Budi Santoso', // Active cashier name
       waktuBuka: nowStr,
       waktuTutup: null,
@@ -127,13 +130,20 @@ export default function ShiftKasir() {
   }
 
   // Tutup Shift
-  function handleTutupShift(e: React.FormEvent) {
+  async function handleTutupShift(e: React.FormEvent) {
     e.preventDefault();
     if (!shiftAktif || uangFisikInput === '') return;
 
     const fisik = parseFloat(uangFisikInput);
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
+    // Call backend API
+    const res = await tutupShift(fisik, catatanTutup || 'Tutup shift register');
+    if (!res.sukses) {
+      alert(res.pesan);
+      return;
+    }
+
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
     const closedShift: RiwayatShift = {
       ...shiftAktif,
       waktuTutup: nowStr,

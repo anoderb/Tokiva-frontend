@@ -24,8 +24,8 @@ export default function LaporanHub() {
     let totalTransaksi = transaksiList.length;
 
     transaksiList.forEach((tx) => {
-      totalOmzet += tx.total;
-      totalDiskon += tx.diskon_total;
+      totalOmzet += Number(tx.total);
+      totalDiskon += Number(tx.diskon_total);
       
       // Calculate estimated cost of goods sold (HPP) to calculate gross profit
       let hppTx = 0;
@@ -33,36 +33,35 @@ export default function LaporanHub() {
         // Find product buying price
         const prodObj = produkList.find((p) => p.id === item.produk_id);
         if (prodObj) {
-          hppTx += prodObj.harga_beli * item.qty;
+          hppTx += Number(prodObj.harga_beli) * item.qty;
         } else {
-          hppTx += item.harga_satuan * 0.7 * item.qty; // fallback 30% margin
+          hppTx += Number(item.harga_satuan) * 0.7 * item.qty; // fallback 30% margin
         }
       });
       
-      totalLaba += (tx.total - hppTx);
+      totalLaba += (Number(tx.total) - hppTx);
     });
 
     return { totalOmzet, totalLaba, totalPajak, totalDiskon, totalTransaksi };
   }, [transaksiList, produkList]);
 
-  // Chart data: Sales by category (calculated from transactions)
+  // Chart data: Sales by category (calculated dynamically from transactions)
   const penjualanKategori = useMemo(() => {
-    const map: Record<string, number> = {
-      'Makanan': 420000,
-      'Minuman': 350000,
-      'Sembako': 1200000,
-      'Perawatan': 280000,
-      'Lainnya': 200000,
-    };
+    const map: Record<string, number> = {};
 
-    // Add some dynamic variance based on real transaction count
-    const countMultiplier = 1 + (transaksiList.length * 0.1);
-    
+    transaksiList.forEach((tx) => {
+      tx.detail?.forEach((item: any) => {
+        const prodObj = produkList.find((p) => p.id === item.produk_id);
+        const kategoriNama = prodObj?.kategori?.nama || 'Lainnya';
+        map[kategoriNama] = (map[kategoriNama] || 0) + Number(item.subtotal);
+      });
+    });
+
     return Object.entries(map).map(([name, val]) => ({
       kategori: name,
-      omzet: Math.round(val * countMultiplier),
-    }));
-  }, [transaksiList]);
+      omzet: val,
+    })).sort((a, b) => b.omzet - a.omzet);
+  }, [transaksiList, produkList]);
 
   const maxKategoriOmzet = useMemo(() => {
     return Math.max(...penjualanKategori.map((k) => k.omzet)) || 1;

@@ -21,6 +21,56 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
 
   const [periode, setPeriode] = useState<'hari' | 'bulan'>('hari');
 
+  const handleEkspor = async (format: 'csv' | 'pdf') => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const authDataStr = localStorage.getItem('tokiva_auth');
+      let token = '';
+      if (authDataStr) {
+        try {
+          const authData = JSON.parse(authDataStr);
+          token = authData.access_token || '';
+        } catch {}
+      }
+
+      const tglMulai = new Date();
+      if (periode === 'bulan') {
+        tglMulai.setDate(1);
+      }
+      tglMulai.setHours(0, 0, 0, 0);
+
+      const tglSelesai = new Date();
+      tglSelesai.setHours(23, 59, 59, 999);
+
+      const query = new URLSearchParams({
+        jenis,
+        format,
+        tgl_mulai: tglMulai.toISOString(),
+        tgl_selesai: tglSelesai.toISOString(),
+      });
+
+      const resp = await fetch(`${baseUrl}/api/laporan/ekspor?${query.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.sukses && json.data?.url) {
+          window.open(json.data.url, '_blank');
+        } else {
+          alert('Gagal mengekspor laporan: ' + (json.pesan || 'Format salah'));
+        }
+      } else {
+        alert('Gagal mengekspor laporan dari server.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terjadi kesalahan koneksi.');
+    }
+  };
+
   // Filters & Pagination States
   const [pencarian, setPencarian] = useState('');
   const [sortKey, setSortKey] = useState('tanggal-desc');
@@ -153,13 +203,22 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => alert('Mock: Mengunduh data CSV/Excel...')}
-          className="text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition-colors hover:opacity-80"
-          style={{ color: 'var(--primary)', borderColor: 'var(--primary)' }}
-        >
-          Ekspor CSV
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleEkspor('csv')}
+            className="text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition-colors hover:opacity-80"
+            style={{ color: 'var(--primary)', borderColor: 'var(--primary)' }}
+          >
+            Ekspor CSV (Excel)
+          </button>
+          <button
+            onClick={() => handleEkspor('pdf')}
+            className="text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition-colors hover:opacity-80 text-white"
+            style={{ background: 'var(--primary-gradient)', borderColor: 'var(--primary)' }}
+          >
+            Ekspor PDF
+          </button>
+        </div>
       </div>
 
       {/* Dynamic Content Area */}
@@ -329,10 +388,10 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
             let omzet = 0;
             let hpp = 0;
             transaksiList.forEach((tx) => {
-              omzet += tx.total;
+              omzet += Number(tx.total);
               tx.detail?.forEach((item) => {
                 const prod = produkList.find((p) => p.id === item.produk_id);
-                hpp += (prod ? prod.harga_beli : item.harga_satuan * 0.7) * item.qty;
+                hpp += (prod ? Number(prod.harga_beli) : Number(item.harga_satuan) * 0.7) * item.qty;
               });
             });
             const labaKotor = omzet - hpp;

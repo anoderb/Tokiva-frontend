@@ -83,7 +83,9 @@ export function getStatusStok(produk: Produk): StatusStok {
   if (produk.expired_date && new Date(produk.expired_date) < new Date()) {
     return 'expired';
   }
-  if (produk.stok <= 0) return 'habis';
-  if (produk.stok <= produk.stok_min) return 'rendah';
+  const stokNum = Number(produk.stok);
+  const stokMinNum = Number(produk.stok_min);
+  if (stokNum <= 0) return 'habis';
+  if (stokNum <= stokMinNum) return 'rendah';
   return 'ok';
 }
