@@ -5,10 +5,8 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useData } from '@/hooks/useData';
-import { dataPengguna } from '@/lib/data/pengguna';
 import { PlusIcon, EditIcon, LockIcon, ChevronLeftIcon } from '@/components/ui/Icons';
 
 interface StaffUser {
@@ -21,11 +19,8 @@ interface StaffUser {
 }
 
 export default function PengaturanPengguna() {
-  const [users, setUsers] = useState<StaffUser[]>([
-    { id: 1, nama: 'Budi Santoso', username: 'admin', role: 'admin', nomor_hp: '081234567890', aktif: true },
-    { id: 2, nama: 'Ani Wulandari', username: 'ani', role: 'kasir', nomor_hp: '085678901234', aktif: true },
-    { id: 3, nama: 'Citra Dewi', username: 'citra', role: 'kasir', nomor_hp: '087890123456', aktif: false },
-  ]);
+  const [users, setUsers] = useState<StaffUser[]>([]);
+  const [sedangMemuat, setSedangMemuat] = useState(true);
 
   const [tampilModal, setTampilModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -36,6 +31,58 @@ export default function PengaturanPengguna() {
   const [sortKey, setSortKey] = useState('nama-asc');
   const [halaman, setHalaman] = useState(1);
   const itemPerHalaman = 10;
+
+  // Helper untuk call API dengan auth token
+  const fetchWithAuth = useCallback(async (path: string, options: RequestInit = {}) => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const authDataStr = localStorage.getItem('tokiva_auth');
+    let token = '';
+    if (authDataStr) {
+      try {
+        const authData = JSON.parse(authDataStr);
+        token = authData.access_token || '';
+      } catch {}
+    }
+    const res = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
+      },
+    });
+    return res;
+  }, []);
+
+  // Muat data dari API backend
+  const loadUsers = useCallback(async () => {
+    try {
+      setSedangMemuat(true);
+      const res = await fetchWithAuth('/api/pengguna?limit=100');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.sukses && json.data) {
+          const mapped = json.data.map((u: any) => ({
+            id: u.id,
+            nama: u.nama,
+            username: u.username,
+            role: u.role,
+            nomor_hp: u.nomor_hp || '',
+            aktif: u.aktif === 1 || u.aktif === true,
+          }));
+          setUsers(mapped);
+        }
+      }
+    } catch (e) {
+      console.error('Gagal me-load data pengguna:', e);
+    } finally {
+      setSedangMemuat(false);
+    }
+  }, [fetchWithAuth]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const usersFiltered = useMemo(() => {
     return users.filter((u) => {
@@ -99,26 +146,55 @@ export default function PengaturanPengguna() {
   }
 
   // Form submit handler
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!nama || !username) return;
 
-    const payload: StaffUser = {
-      id: editId === null ? Date.now() : editId,
-      nama,
-      username,
-      role,
-      nomor_hp: nomorHp,
-      aktif,
-    };
+    try {
+      const bodyPayload: any = {
+        nama,
+        username,
+        role,
+        nomor_hp: nomorHp || null,
+        aktif: aktif ? 1 : 0,
+      };
 
-    if (editId === null) {
-      setUsers((prev) => [...prev, payload]);
-    } else {
-      setUsers((prev) => prev.map((u) => (u.id === editId ? payload : u)));
+      if (password) {
+        bodyPayload.password = password;
+      }
+
+      let res;
+      if (editId === null) {
+        if (!password) {
+          alert('Password wajib diisi untuk pengguna baru');
+          return;
+        }
+        res = await fetchWithAuth('/api/pengguna', {
+          method: 'POST',
+          body: JSON.stringify(bodyPayload),
+        });
+      } else {
+        res = await fetchWithAuth(`/api/pengguna/${editId}`, {
+          method: 'PUT',
+          body: JSON.stringify(bodyPayload),
+        });
+      }
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.sukses) {
+          setTampilModal(false);
+          await loadUsers();
+        } else {
+          alert(json.pesan || 'Gagal menyimpan data');
+        }
+      } else {
+        const errJson = await res.json().catch(() => null);
+        alert(errJson?.pesan || 'Gagal menyimpan data ke server');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Terjadi kesalahan jaringan');
     }
-
-    setTampilModal(false);
   }
 
   return (
@@ -249,20 +325,30 @@ export default function PengaturanPengguna() {
                   </td>
                 </tr>
               ))}
-              {usersFiltered.length === 0 && (
+              {sedangMemuat ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>
+                    Memuat data staff...
+                  </td>
+                </tr>
+              ) : usersFiltered.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>
                     Tidak ada staff pengguna ditemukan
                   </td>
                 </tr>
-              )}
+              ) : null}
             </tbody>
           </table>
         </div>
 
         {/* Card List Mobile */}
         <div className="block md:hidden divide-y animate-fade-in" style={{ borderColor: 'var(--border)' }}>
-          {usersPaginasi.map((u) => (
+          {sedangMemuat ? (
+            <div className="text-center py-8 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Memuat data staff...
+            </div>
+          ) : usersPaginasi.map((u) => (
             <div key={u.id} className="p-4 space-y-3 hover:opacity-95 transition-opacity" style={{ color: 'var(--text-primary)' }}>
               {/* Header: Nama & Role */}
               <div className="flex justify-between items-start gap-2">
@@ -315,7 +401,7 @@ export default function PengaturanPengguna() {
               </div>
             </div>
           ))}
-          {usersFiltered.length === 0 && (
+          {!sedangMemuat && usersFiltered.length === 0 && (
             <div className="text-center py-8 text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Tidak ada staff pengguna ditemukan
             </div>
