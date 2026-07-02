@@ -7,6 +7,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/hooks/useAuth';
 import { PlusIcon, EditIcon, LockIcon, ChevronLeftIcon } from '@/components/ui/Icons';
 
 interface StaffUser {
@@ -19,6 +20,7 @@ interface StaffUser {
 }
 
 export default function PengaturanPengguna() {
+  const { isAdmin } = useAuth();
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [sedangMemuat, setSedangMemuat] = useState(true);
 
@@ -58,7 +60,7 @@ export default function PengaturanPengguna() {
   const loadUsers = useCallback(async () => {
     try {
       setSedangMemuat(true);
-      const res = await fetchWithAuth('/api/pengguna?limit=100');
+      const res = await fetchWithAuth('/api/users?limit=100');
       if (res.ok) {
         const json = await res.json();
         if (json.sukses && json.data) {
@@ -81,8 +83,10 @@ export default function PengaturanPengguna() {
   }, [fetchWithAuth]);
 
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [loadUsers, isAdmin]);
 
   const usersFiltered = useMemo(() => {
     return users.filter((u) => {
@@ -169,12 +173,12 @@ export default function PengaturanPengguna() {
           alert('Password wajib diisi untuk pengguna baru');
           return;
         }
-        res = await fetchWithAuth('/api/pengguna', {
+        res = await fetchWithAuth('/api/users', {
           method: 'POST',
           body: JSON.stringify(bodyPayload),
         });
       } else {
-        res = await fetchWithAuth(`/api/pengguna/${editId}`, {
+        res = await fetchWithAuth(`/api/users/${editId}`, {
           method: 'PUT',
           body: JSON.stringify(bodyPayload),
         });
@@ -195,6 +199,23 @@ export default function PengaturanPengguna() {
     } catch (err: any) {
       alert(err.message || 'Terjadi kesalahan jaringan');
     }
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
+        <div className="p-4 bg-red-500/10 text-red-500 rounded-full">
+          <LockIcon size={40} />
+        </div>
+        <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Akses Ditolak</h2>
+        <p className="text-sm max-w-sm text-center" style={{ color: 'var(--text-tertiary)' }}>
+          Halaman ini hanya dapat diakses oleh Administrator. Silakan hubungi admin toko Anda.
+        </p>
+        <Link href="/dashboard" className="px-4 py-2.5 rounded-xl text-white text-xs font-semibold hover:opacity-90 transition-opacity" style={{ background: 'var(--primary-gradient)' }}>
+          Kembali ke Dashboard
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -516,10 +537,11 @@ export default function PengaturanPengguna() {
                     <input
                       type="text"
                       required
+                      disabled={editId !== null}
                       placeholder="ani"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl text-sm"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-sm disabled:opacity-50"
                       style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
                     />
                   </div>
