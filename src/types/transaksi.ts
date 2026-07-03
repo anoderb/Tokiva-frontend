@@ -48,6 +48,7 @@ export interface Transaksi {
   deleted_at: string | null;
   // Relasi
   detail?: TransaksiDetail[];
+  transaksi_detail?: TransaksiDetail[];
   pembayaran?: Pembayaran[];
   nama_kasir?: string;
   nama_member?: string;

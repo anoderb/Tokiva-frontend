@@ -473,7 +473,7 @@ export default function HalamanKasir() {
   const member = memberDipilih ? pelangganList.find((m) => m.id === memberDipilih) : null;
 
   // Load enabled payment methods from localStorage
-  const activeMethods = useMemo(() => {
+  const activeMethods = useMemo<MetodePembayaran[]>(() => {
     if (typeof window === 'undefined') return ['tunai', 'qris', 'transfer'];
     const saved = localStorage.getItem('tokiva_metode_pembayaran');
     let enabledObj = { tunai: true, qris: true, transfer: true, bon: true };
