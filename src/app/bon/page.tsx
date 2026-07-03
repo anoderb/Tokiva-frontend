@@ -12,6 +12,20 @@ import { useData } from '@/hooks/useData';
 import { formatRupiah } from '@/lib/format_rupiah';
 import * as Icons from '@/components/ui/Icons';
 
+function formatWaktuLokal(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const date = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${date} ${hours}:${minutes}`;
+  } catch {
+    return isoString;
+  }
+}
+
 export default function ManajemenBon() {
   const { pelangganList, updatePelanggan } = useData();
 
@@ -515,7 +529,7 @@ export default function ManajemenBon() {
                 <div>
                   <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{r.nama}</p>
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                    {r.tanggal} • <span className="uppercase">{r.metode}</span>
+                    {formatWaktuLokal(r.tanggal)} • <span className="uppercase">{r.metode}</span>
                   </p>
                 </div>
                 <span className="font-semibold" style={{ color: 'var(--success)' }}>

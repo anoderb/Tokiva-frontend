@@ -12,20 +12,28 @@ import { useTheme } from '@/hooks/useTheme';
 import { getSapaan } from '@/lib/konstanta';
 import * as Icons from '@/components/ui/Icons';
 import { useData } from '@/hooks/useData';
+import { SyncIndicator } from '@/components/ui/SyncIndicator';
 
 export default function Topbar({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
-  const { pengguna, logout } = useAuth();
+  const { pengguna, logout, isAdmin } = useAuth();
   const { tema, toggleTema } = useTheme();
-  const { unreadNotificationsCount } = useData();
+  const { unreadNotificationsCount, shiftAktif } = useData();
   const router = useRouter();
   const [menuTerbuka, setMenuTerbuka] = useState(false);
+  const [tampilModalPeringatan, setTampilModalPeringatan] = useState(false);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    if (shiftAktif) {
+      setMenuTerbuka(false);
+      setTampilModalPeringatan(true);
+      return;
+    }
+    await logout();
     router.push('/login');
   }
 
   return (
+    <>
     <header
       className="sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6 h-16 shrink-0"
       style={{
@@ -58,6 +66,9 @@ export default function Topbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
+        {/* Sync Indicator */}
+        <SyncIndicator />
+
         {/* Online Indicator */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
           style={{ background: 'var(--success-light)', color: 'var(--success)' }}
@@ -141,17 +152,19 @@ export default function Topbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
                 </div>
 
                 {/* Menu items */}
-                <div className="py-1">
-                  <button
-                    className="w-full text-left px-4 py-2.5 text-xs font-semibold flex items-center gap-3 transition-colors uppercase tracking-wider"
-                    style={{ color: 'var(--text-secondary)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    onClick={() => { setMenuTerbuka(false); router.push('/pengaturan'); }}
-                  >
-                    <Icons.SettingsIcon size={16} /> Pengaturan
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div className="py-1">
+                    <button
+                      className="w-full text-left px-4 py-2.5 text-xs font-semibold flex items-center gap-3 transition-colors uppercase tracking-wider"
+                      style={{ color: 'var(--text-secondary)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      onClick={() => { setMenuTerbuka(false); router.push('/pengaturan'); }}
+                    >
+                      <Icons.SettingsIcon size={16} /> Pengaturan
+                    </button>
+                  </div>
+                )}
 
                 <div style={{ borderTop: '1px solid var(--border)' }}>
                   <button
@@ -170,5 +183,41 @@ export default function Topbar({ onToggleSidebar }: { onToggleSidebar?: () => vo
         </div>
       </div>
     </header>
+
+    {tampilModalPeringatan && (
+      <>
+        <div
+          className="fixed inset-0 bg-black/60 z-50 animate-fade-in backdrop-blur-sm"
+          onClick={() => setTampilModalPeringatan(false)}
+        />
+        <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 max-w-sm mx-auto z-50 animate-slide-up">
+          <div
+            className="rounded-2xl overflow-hidden shadow-xl p-6 space-y-4"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center gap-3 text-amber-500">
+              <Icons.LockIcon size={24} />
+              <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>
+                Peringatan Shift
+              </h3>
+            </div>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              Shift register Anda masih terbuka! Harap tutup shift terlebih dahulu di menu <strong>Shift & Kasir</strong> sebelum keluar dari sesi Anda.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setTampilModalPeringatan(false)}
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:brightness-110"
+                style={{ background: 'var(--primary-gradient)' }}
+              >
+                Dimengerti
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+    </>
   );
 }

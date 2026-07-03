@@ -12,6 +12,23 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatRupiah } from '@/lib/format_rupiah';
 import { LockIcon, ReceiptIcon, PlusIcon } from '@/components/ui/Icons';
 
+function formatWaktuLokal(isoString: string | null): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const date = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`;
+  } catch {
+    return isoString;
+  }
+}
+
 interface RiwayatShift {
   id: number;
   kasir: string;
@@ -45,20 +62,48 @@ export default function ShiftKasir() {
   const [tampilModalBuka, setTampilModalBuka] = useState(false);
   const [tampilModalTutup, setTampilModalTutup] = useState(false);
 
-  // Load shift from localStorage
+  // Fetch shift history from backend
   useEffect(() => {
-    const hist = localStorage.getItem('tokiva_shift_riwayat');
-    if (hist) {
-      const parsed = JSON.parse(hist);
-      // Bersihkan data ghoib Budi Santoso & Ani Wulandari jika masih tersimpan di local
-      const cleaned = parsed.filter((r: RiwayatShift) => r.kasir !== 'Budi Santoso' && r.kasir !== 'Ani Wulandari');
-      setRiwayatList(cleaned);
-      localStorage.setItem('tokiva_shift_riwayat', JSON.stringify(cleaned));
-    } else {
-      setRiwayatList([]);
-      localStorage.setItem('tokiva_shift_riwayat', JSON.stringify([]));
+    async function fetchShiftHistory() {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const authDataStr = localStorage.getItem('tokiva_auth');
+        let token = '';
+        if (authDataStr) {
+          try {
+            const authData = JSON.parse(authDataStr);
+            token = authData.access_token || '';
+          } catch {}
+        }
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        };
+
+        const resp = await fetch(`${baseUrl}/api/shift/riwayat`, { headers });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.sukses && Array.isArray(json.data)) {
+            const mapped: RiwayatShift[] = json.data.map((s: any) => ({
+              id: s.id,
+              kasir: s.user?.nama || 'Kasir',
+              waktuBuka: s.waktu_buka,
+              waktuTutup: s.waktu_tutup,
+              modalAwal: Number(s.modal_awal),
+              uangSistem: Number(s.modal_awal) + Number(s.total_tunai),
+              uangFisik: s.waktu_tutup ? Number(s.modal_awal) + Number(s.total_tunai) + Number(s.total_selisih) : null,
+              selisih: s.waktu_tutup ? Number(s.total_selisih) : null,
+              status: s.status,
+            }));
+            setRiwayatList(mapped);
+          }
+        }
+      } catch (err) {
+        console.error('Gagal mengambil riwayat shift:', err);
+      }
     }
-  }, []);
+    fetchShiftHistory();
+  }, [shiftAktif]);
 
   // Calculate current shift dynamic metrics
   const statsHariIni = useMemo(() => {
@@ -75,12 +120,45 @@ export default function ShiftKasir() {
         const tglTx = new Date(tx.created_at);
         if (tglTx >= tglBuka) {
           total += Number(tx.total);
-          if (tx.status === 'bon') {
-            bon += (Number(tx.total) - Number(tx.bayar));
-            tunai += Number(tx.bayar); // any cash down payment
+          
+          if (tx.pembayaran && tx.pembayaran.length > 0) {
+            tx.pembayaran.forEach((p) => {
+              const nominal = Number(p.nominal) || 0;
+              const metode = p.metode?.toLowerCase();
+              if (metode === 'tunai') {
+                tunai += nominal;
+              } else if (metode === 'qris') {
+                qris += nominal;
+              } else if (metode === 'transfer') {
+                transfer += nominal;
+              } else if (metode === 'bon') {
+                bon += nominal;
+              } else if (metode === 'voucher') {
+                qris += nominal; // voucher dimasukkan ke kategori non-tunai/qris
+              }
+            });
+            // Uang kembalian diambil dari kas tunai
+            const kembalian = Number(tx.kembalian) || 0;
+            if (kembalian > 0) {
+              tunai -= kembalian;
+            }
           } else {
-            // Assume payments method
-            tunai += Number(tx.total); // Defaulting to cash since simplified, but can map if we had billing info
+            // Fallback jika tidak ada data detail pembayaran
+            if (tx.status === 'bon') {
+              bon += (Number(tx.total) - Number(tx.bayar));
+              tunai += Number(tx.bayar);
+            } else {
+              const metode = tx.metode_pembayaran?.toLowerCase();
+              if (metode === 'qris') {
+                qris += Number(tx.total);
+              } else if (metode === 'transfer') {
+                transfer += Number(tx.total);
+              } else if (metode === 'bon') {
+                bon += Number(tx.total);
+              } else {
+                tunai += Number(tx.total);
+              }
+            }
           }
         }
       });
@@ -153,10 +231,6 @@ export default function ShiftKasir() {
       status: 'tutup',
     };
 
-    const updatedRiwayat = [closedShift, ...riwayatList];
-    setRiwayatList(updatedRiwayat);
-    localStorage.setItem('tokiva_shift_riwayat', JSON.stringify(updatedRiwayat));
-    
     setShiftAktif(null);
     localStorage.removeItem('tokiva_shift_aktif');
     
@@ -230,8 +304,8 @@ export default function ShiftKasir() {
                 <p className="font-bold mt-0.5" style={{ color: 'var(--primary)' }}>{formatRupiah(shiftAktif.modalAwal)}</p>
               </div>
               <div>
-                <p style={{ color: 'var(--text-tertiary)' }}>Penjualan Tunai Shift ini</p>
-                <p className="font-bold mt-0.5" style={{ color: 'var(--primary)' }}>+{formatRupiah(statsHariIni.tunai)}</p>
+                <p style={{ color: 'var(--text-tertiary)' }}>Total Penjualan Shift ini</p>
+                <p className="font-bold mt-0.5" style={{ color: 'var(--primary)' }}>+{formatRupiah(statsHariIni.total)}</p>
               </div>
             </div>
 
@@ -326,8 +400,8 @@ export default function ShiftKasir() {
                 <tr key={r.id} className="hover:opacity-95 transition-opacity" style={{ color: 'var(--text-primary)' }}>
                   <td className="p-3 font-bold">{r.kasir}</td>
                   <td className="p-3" style={{ color: 'var(--text-secondary)' }}>
-                    <p>Buka: {r.waktuBuka}</p>
-                    <p className="mt-0.5">Tutup: {r.waktuTutup || '-'}</p>
+                    <p>Buka: {formatWaktuLokal(r.waktuBuka)}</p>
+                    <p className="mt-0.5">Tutup: {formatWaktuLokal(r.waktuTutup)}</p>
                   </td>
                   <td className="p-3 text-right font-medium">{formatRupiah(r.modalAwal)}</td>
                   {isAdmin && <td className="p-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>{formatRupiah(r.uangSistem)}</td>}
@@ -392,8 +466,8 @@ export default function ShiftKasir() {
                 <div className="col-span-2">
                   <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Waktu Buka / Tutup</p>
                   <p className="font-semibold mt-0.5 text-[9px] sm:text-[10px]" style={{ color: 'var(--text-secondary)' }}>
-                    Buka: {r.waktuBuka} <br />
-                    Tutup: {r.waktuTutup || '-'}
+                    Buka: {formatWaktuLokal(r.waktuBuka)} <br />
+                    Tutup: {formatWaktuLokal(r.waktuTutup)}
                   </p>
                 </div>
                 <div>
@@ -509,15 +583,13 @@ export default function ShiftKasir() {
               </div>
 
               <div className="p-5 space-y-4">
-                {isAdmin && (
-                  <div className="p-4 rounded-xl text-center" style={{ background: 'var(--bg)' }}>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>UANG LACI SYSTEM</p>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>{formatRupiah(uangSistem)}</p>
-                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                      Modal Awal ({formatRupiah(shiftAktif?.modalAwal || 0)}) + Tunai Masuk ({formatRupiah(statsHariIni.tunai)})
-                    </p>
-                  </div>
-                )}
+                <div className="p-4 rounded-xl text-center" style={{ background: 'var(--bg)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>UANG LACI SYSTEM</p>
+                  <p className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>{formatRupiah(uangSistem)}</p>
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Modal Awal ({formatRupiah(shiftAktif?.modalAwal || 0)}) + Tunai Masuk ({formatRupiah(statsHariIni.tunai)})
+                  </p>
+                </div>
 
                 {/* Uang Fisik */}
                 <div>
@@ -537,7 +609,7 @@ export default function ShiftKasir() {
                 </div>
 
                 {/* Selisih Indicator */}
-                {isAdmin && uangFisikInput !== '' && (
+                {uangFisikInput !== '' && (
                   <div
                     className="p-3 rounded-xl flex items-center justify-between text-xs font-bold"
                     style={{

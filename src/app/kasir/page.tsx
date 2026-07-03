@@ -472,6 +472,30 @@ export default function HalamanKasir() {
   // Member selected
   const member = memberDipilih ? pelangganList.find((m) => m.id === memberDipilih) : null;
 
+  // Load enabled payment methods from localStorage
+  const activeMethods = useMemo(() => {
+    if (typeof window === 'undefined') return ['tunai', 'qris', 'transfer'];
+    const saved = localStorage.getItem('tokiva_metode_pembayaran');
+    let enabledObj = { tunai: true, qris: true, transfer: true, bon: true };
+    if (saved) {
+      try {
+        enabledObj = JSON.parse(saved);
+      } catch {}
+    }
+    const active = Object.keys(enabledObj).filter((k) => enabledObj[k as keyof typeof enabledObj] === true) as MetodePembayaran[];
+    return active.filter((m) => m !== 'bon' || !!memberDipilih);
+  }, [tampilDialogBayar, memberDipilih]);
+
+  const openPaymentDialog = () => {
+    let firstActive: MetodePembayaran = 'tunai';
+    if (activeMethods.length > 0) {
+      firstActive = activeMethods[0] as MetodePembayaran;
+    }
+    setMetodeBayar(firstActive);
+    setTampilDialogBayar(true);
+    setNominalBayar(totalKeranjang.toString());
+  };
+
   // Tambah ke keranjang
   const tambahKeKeranjang = useCallback((produk: Produk) => {
     if (produk.stok <= 0) return;
@@ -969,7 +993,7 @@ export default function HalamanKasir() {
                 </div>
                 <button
                   id="btn-bayar"
-                  onClick={() => { setTampilDialogBayar(true); setNominalBayar(totalKeranjang.toString()); }}
+                  onClick={openPaymentDialog}
                   className="w-full py-3.5 rounded-xl text-xs font-extrabold uppercase tracking-wider text-white transition-all duration-200 hover:shadow-lg active:scale-[0.98]"
                   style={{ background: 'var(--primary-gradient)', boxShadow: '0 4px 14px rgba(13,148,136,0.4)' }}
                 >
@@ -1031,11 +1055,16 @@ export default function HalamanKasir() {
                 {/* Metode */}
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-secondary)' }}>Metode Pembayaran</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['tunai', 'qris', 'transfer'] as MetodePembayaran[]).map((metode) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {activeMethods.map((metode) => (
                       <button
                         key={metode}
-                        onClick={() => setMetodeBayar(metode)}
+                        onClick={() => {
+                          setMetodeBayar(metode);
+                          if (metode !== 'tunai') {
+                            setNominalBayar(totalKeranjang.toString());
+                          }
+                        }}
                         className="py-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all duration-200"
                         style={{
                           background: metodeBayar === metode ? 'rgba(20,184,166,0.12)' : 'var(--bg)',

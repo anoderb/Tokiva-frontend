@@ -11,6 +11,35 @@ import { useData } from '@/hooks/useData';
 import { formatRupiah } from '@/lib/format_rupiah';
 import { StockIcon, ReportIcon, ReceiptIcon, ChevronLeftIcon } from '@/components/ui/Icons';
 
+function formatWaktuLaporan(tanggal: string, waktu: string): string {
+  try {
+    const datePart = tanggal.includes('T') ? tanggal.split('T')[0] : tanggal;
+    let timePart = '00:00:00';
+    if (waktu) {
+      if (waktu.includes('T')) {
+        timePart = waktu.split('T')[1].substring(0, 8);
+      } else {
+        timePart = waktu;
+      }
+    }
+    
+    // Satukan dan parse sebagai tanggal UTC
+    const utcDate = new Date(`${datePart}T${timePart}Z`);
+    
+    // Ambil string format lokal (YYYY-MM-DD HH:mm:ss)
+    const year = utcDate.getFullYear();
+    const month = String(utcDate.getMonth() + 1).padStart(2, '0');
+    const date = String(utcDate.getDate()).padStart(2, '0');
+    const hours = String(utcDate.getHours()).padStart(2, '0');
+    const minutes = String(utcDate.getMinutes()).padStart(2, '0');
+    const seconds = String(utcDate.getSeconds()).padStart(2, '0');
+    
+    return `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`;
+  } catch {
+    return `${tanggal} ${waktu}`;
+  }
+}
+
 interface DetailLaporanProps {
   params: Promise<{ jenis: string }>;
 }
@@ -79,11 +108,22 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
 
   // Filter & Sort transaksi
   const txFiltered = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+    const currentMonthStr = todayStr.substring(0, 7); // YYYY-MM
+
     return transaksiList.filter((tx) => {
       const matchSearch = tx.no_transaksi.toLowerCase().includes(pencarian.toLowerCase());
-      return matchSearch;
+      if (!matchSearch) return false;
+
+      const txDateStr = tx.tanggal.includes('T') ? tx.tanggal.split('T')[0] : tx.tanggal;
+      if (periode === 'hari') {
+        return txDateStr === todayStr;
+      } else if (periode === 'bulan') {
+        return txDateStr.startsWith(currentMonthStr);
+      }
+      return true;
     });
-  }, [transaksiList, pencarian]);
+  }, [transaksiList, pencarian, periode]);
 
   const txSorted = useMemo(() => {
     const [field, order] = sortKey.split('-');
@@ -111,12 +151,24 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
   const [halamanStok, setHalamanStok] = useState(1);
 
   const stokFiltered = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const currentMonthStr = todayStr.substring(0, 7);
+
     return stokBatchList.filter((batch) => {
       const prod = produkList.find((p) => p.id === batch.produk_id);
       const namaProduk = prod ? prod.nama.toLowerCase() : '';
-      return (batch.batch_no?.toLowerCase() || '').includes(pencarianStok.toLowerCase()) || namaProduk.includes(pencarianStok.toLowerCase());
+      const matchSearch = (batch.batch_no?.toLowerCase() || '').includes(pencarianStok.toLowerCase()) || namaProduk.includes(pencarianStok.toLowerCase());
+      if (!matchSearch) return false;
+
+      const batchDateStr = batch.created_at.includes('T') ? batch.created_at.split('T')[0] : batch.created_at;
+      if (periode === 'hari') {
+        return batchDateStr === todayStr;
+      } else if (periode === 'bulan') {
+        return batchDateStr.startsWith(currentMonthStr);
+      }
+      return true;
     });
-  }, [stokBatchList, produkList, pencarianStok]);
+  }, [stokBatchList, produkList, pencarianStok, periode]);
 
   const stokSorted = useMemo(() => {
     const [field, order] = sortKeyStok.split('-');
@@ -273,7 +325,7 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
                 {txPaginasi.map((tx) => (
                   <tr key={tx.id} style={{ color: 'var(--text-primary)' }}>
                     <td className="p-3 font-semibold">{tx.no_transaksi}</td>
-                    <td className="p-3">{tx.tanggal} {tx.waktu}</td>
+                    <td className="p-3">{formatWaktuLaporan(tx.tanggal, tx.waktu)}</td>
                     <td className="p-3 text-right font-bold" style={{ color: 'var(--primary)' }}>{formatRupiah(tx.total)}</td>
                     <td className="p-3 text-center capitalize font-semibold">{tx.status}</td>
                   </tr>
@@ -305,7 +357,7 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
                 <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-lg text-[10px] sm:text-xs" style={{ background: 'var(--bg)' }}>
                   <div>
                     <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Waktu</p>
-                    <p className="font-semibold mt-0.5">{tx.tanggal} {tx.waktu}</p>
+                    <p className="font-semibold mt-0.5">{formatWaktuLaporan(tx.tanggal, tx.waktu)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Total Belanja</p>
@@ -387,7 +439,7 @@ export default function DetailLaporanJenis({ params }: DetailLaporanProps) {
           {(() => {
             let omzet = 0;
             let hpp = 0;
-            transaksiList.forEach((tx) => {
+            txFiltered.forEach((tx) => {
               omzet += Number(tx.total);
               tx.detail?.forEach((item) => {
                 const prod = produkList.find((p) => p.id === item.produk_id);

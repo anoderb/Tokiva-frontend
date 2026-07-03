@@ -12,6 +12,30 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatRupiah } from '@/lib/format_rupiah';
 import { ChevronLeftIcon, ReceiptIcon, SearchIcon, EyeIcon } from '@/components/ui/Icons';
 
+function formatWaktuLokal(tanggal: string, waktu: string): string {
+  try {
+    const datePart = tanggal.includes('T') ? tanggal.split('T')[0] : tanggal;
+    let timePart = '00:00:00';
+    if (waktu) {
+      if (waktu.includes('T')) {
+        timePart = waktu.split('T')[1].substring(0, 8);
+      } else {
+        timePart = waktu;
+      }
+    }
+    const utcDate = new Date(`${datePart}T${timePart}Z`);
+    const year = utcDate.getFullYear();
+    const month = String(utcDate.getMonth() + 1).padStart(2, '0');
+    const date = String(utcDate.getDate()).padStart(2, '0');
+    const hours = String(utcDate.getHours()).padStart(2, '0');
+    const minutes = String(utcDate.getMinutes()).padStart(2, '0');
+    const seconds = String(utcDate.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`;
+  } catch {
+    return `${tanggal} ${waktu}`;
+  }
+}
+
 export default function RiwayatTransaksi() {
   const { transaksiList, pelangganList, updateProduk, updatePelanggan } = useData();
   const { isAdmin } = useAuth();
@@ -120,7 +144,7 @@ export default function RiwayatTransaksi() {
           <ReceiptIcon size={24} style={{ color: 'var(--primary)' }} /> Riwayat Transaksi Penjualan
         </h1>
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          Tinjau riwayat penjualan kasir, cetak ulang struk, kirim struk via WhatsApp, atau batalkan transaksi (Void).
+          Tinjau riwayat penjualan kasir, cetak ulang struk, atau batalkan transaksi (Void).
         </p>
       </div>
 
@@ -205,7 +229,7 @@ export default function RiwayatTransaksi() {
                 <tr key={tx.id} className="hover:opacity-95 transition-opacity" style={{ color: 'var(--text-primary)' }}>
                   <td className="p-3.5 font-bold">{tx.no_transaksi}</td>
                   <td className="p-3.5 font-medium" style={{ color: 'var(--text-secondary)' }}>
-                    {tx.tanggal} • {tx.waktu}
+                    {formatWaktuLokal(tx.tanggal, tx.waktu)}
                   </td>
                   <td className="p-3.5 font-medium">Budi Santoso</td>
                   <td className="p-3.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatRupiah(tx.subtotal)}</td>
@@ -271,7 +295,7 @@ export default function RiwayatTransaksi() {
               <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-lg text-[10px] sm:text-xs" style={{ background: 'var(--bg)' }}>
                 <div>
                   <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Tanggal / Waktu</p>
-                  <p className="font-semibold mt-0.5">{tx.tanggal} • {tx.waktu}</p>
+                  <p className="font-semibold mt-0.5">{formatWaktuLokal(tx.tanggal, tx.waktu)}</p>
                 </div>
                 <div>
                   <p className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Kasir</p>
@@ -400,7 +424,7 @@ export default function RiwayatTransaksi() {
                   </div>
                   <div className="flex justify-between">
                     <span>Tanggal / Waktu:</span>
-                    <span>{txDetailObj.tanggal} {txDetailObj.waktu}</span>
+                    <span>{formatWaktuLokal(txDetailObj.tanggal, txDetailObj.waktu)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Kasir:</span>
@@ -416,7 +440,7 @@ export default function RiwayatTransaksi() {
 
                 {/* Items List */}
                 <div className="space-y-2 pt-3" style={{ borderTop: '1px dashed var(--border)' }}>
-                  {txDetailObj.detail?.map((item) => (
+                  {(txDetailObj.transaksi_detail || txDetailObj.detail || []).map((item) => (
                     <div key={item.id} className="text-xs">
                       <div className="flex justify-between">
                         <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{item.nama_produk}</span>
@@ -436,17 +460,28 @@ export default function RiwayatTransaksi() {
                     <span className="font-semibold">{formatRupiah(txDetailObj.subtotal)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                    <span style={{ color: 'var(--text-primary)' }}>Total Bayar:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>Total:</span>
                     <span style={{ color: 'var(--primary)' }}>{formatRupiah(txDetailObj.total)}</span>
                   </div>
-                  <div className="flex justify-between" style={{ color: 'var(--text-secondary)' }}>
-                    <span>Bayar (Nominal):</span>
-                    <span>{formatRupiah(txDetailObj.bayar)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold" style={{ color: 'var(--success)' }}>
-                    <span>Kembalian:</span>
-                    <span>{formatRupiah(txDetailObj.kembalian)}</span>
-                  </div>
+                  {txDetailObj.pembayaran && txDetailObj.pembayaran.length > 0 ? (
+                    txDetailObj.pembayaran.map((p: any, idx: number) => (
+                      <div key={idx} className="flex justify-between uppercase" style={{ color: 'var(--text-secondary)' }}>
+                        <span>{p.metode}:</span>
+                        <span>{formatRupiah(p.nominal)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex justify-between uppercase" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{txDetailObj.metode_pembayaran || txDetailObj.status || 'TUNAI'}:</span>
+                      <span>{formatRupiah(txDetailObj.bayar)}</span>
+                    </div>
+                  )}
+                  {Number(txDetailObj.kembalian) > 0 && (
+                    <div className="flex justify-between font-bold" style={{ color: 'var(--success)' }}>
+                      <span>KEMBALI:</span>
+                      <span>{formatRupiah(txDetailObj.kembalian)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Receipt Footer Message */}
@@ -457,21 +492,13 @@ export default function RiwayatTransaksi() {
 
               {/* Actions Footer */}
               <div className="p-5 space-y-2" style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => alert('Mock: Struk sedang dikirim ke printer thermal...')}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white transition-colors"
-                    style={{ background: 'var(--primary)' }}
-                  >
-                    Reprint Struk
-                  </button>
-                  <button
-                    onClick={() => alert('Mock: Membuka API WhatsApp share...')}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold border border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors"
-                  >
-                    WhatsApp Struk
-                  </button>
-                </div>
+                <button
+                  onClick={() => alert('Mock: Struk sedang dikirim ke printer thermal...')}
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white transition-colors"
+                  style={{ background: 'var(--primary)' }}
+                >
+                  Reprint Struk
+                </button>
                 
                 {isAdmin && (
                   <button

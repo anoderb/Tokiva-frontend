@@ -14,7 +14,7 @@ interface AuthContextType {
   pengguna: Pengguna | null;
   sedangMemuat: boolean;
   login: (data: LoginRequest) => Promise<LoginResponse>;
-  logout: () => void;
+  logout: () => void | Promise<void>;
   isAdmin: boolean;
 }
 
@@ -103,9 +103,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setPengguna(null);
+  const logout = useCallback(async () => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const authDataStr = localStorage.getItem(STORAGE_KEY);
+      if (authDataStr) {
+        const authData = JSON.parse(authDataStr);
+        const token = authData.access_token || '';
+        if (token) {
+          // 1. Cek apakah ada shift aktif untuk kasir ini
+          const shiftResp = await fetch(`${baseUrl}/api/shift/aktif`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (shiftResp.ok) {
+            const shiftJson = await shiftResp.json();
+            if (shiftJson.sukses && shiftJson.data) {
+              // 2. Jika ada shift aktif, tutup otomatis dengan kas fisik 0 (penutupan paksa)
+              await fetch(`${baseUrl}/api/shift/tutup`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  modal_akhir_fisik: 0,
+                  catatan: 'Tutup shift otomatis (Sesi Keluar/Logout)'
+                })
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Gagal menutup shift otomatis saat logout:', e);
+    } finally {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('tokiva_shift_aktif');
+      setPengguna(null);
+    }
   }, []);
 
   const isAdmin = pengguna?.role === 'admin';

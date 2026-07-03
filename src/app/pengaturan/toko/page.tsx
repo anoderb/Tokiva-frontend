@@ -26,6 +26,12 @@ export default function PengaturanToko() {
   const [qrisImage, setQrisImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [metodePembayaranSetting, setMetodePembayaranSetting] = useState({
+    tunai: true,
+    qris: true,
+    transfer: true,
+    bon: true
+  });
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const qrisInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +48,13 @@ export default function PengaturanToko() {
       setFooterStruk(data.footerStruk || 'Terima kasih telah berbelanja!');
       if (data.logoToko) setLogoToko(data.logoToko);
       if (data.qrisImage) setQrisImage(data.qrisImage);
+    }
+
+    const savedMethods = localStorage.getItem('tokiva_metode_pembayaran');
+    if (savedMethods) {
+      try {
+        setMetodePembayaranSetting(JSON.parse(savedMethods));
+      } catch {}
     }
   }, []);
 
@@ -76,6 +89,7 @@ export default function PengaturanToko() {
     };
 
     localStorage.setItem('tokiva_pengaturan_toko', JSON.stringify(payload));
+    localStorage.setItem('tokiva_metode_pembayaran', JSON.stringify(metodePembayaranSetting));
 
     // Trigger sidebar refresh via storage event
     window.dispatchEvent(new StorageEvent('storage', {
@@ -298,6 +312,54 @@ export default function PengaturanToko() {
                 Custom
               </span>
             </div>
+          </div>
+
+          {/* ═══════════════ Metode Pembayaran ═══════════════ */}
+          <h2 className="text-sm font-bold pb-2 pt-2 flex items-center gap-2" style={{ color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
+            💳 Metode Pembayaran Kasir
+          </h2>
+          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+            Aktifkan atau nonaktifkan metode pembayaran yang tersedia di halaman kasir belanja.
+          </p>
+          <div className="grid grid-cols-2 gap-4 py-2">
+            {(['tunai', 'qris', 'transfer', 'bon'] as const).map((method) => {
+              const labelMap = {
+                tunai: 'Tunai (Cash)',
+                qris: 'QRIS',
+                transfer: 'Transfer Bank',
+                bon: 'Bon / Piutang'
+              };
+              return (
+                <label
+                  key={method}
+                  className="flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all duration-200"
+                  style={{
+                    borderColor: metodePembayaranSetting[method] ? 'var(--primary)' : 'var(--border)',
+                    background: metodePembayaranSetting[method] ? 'rgba(20,184,166,0.06)' : 'transparent',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={metodePembayaranSetting[method]}
+                    onChange={(e) => {
+                      setMetodePembayaranSetting({
+                        ...metodePembayaranSetting,
+                        [method]: e.target.checked
+                      });
+                    }}
+                    className="rounded text-teal-600 focus:ring-teal-500 w-4 h-4"
+                  />
+                  <div>
+                    <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {labelMap[method]}
+                    </p>
+                    <p className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {method === 'bon' ? 'Khusus pelanggan terdaftar' : 'Metode pembayaran retail umum'}
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
           </div>
 
           {/* ═══════════════ Struk ═══════════════ */}

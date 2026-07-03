@@ -7,7 +7,10 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { getStatusStok, type Produk, type Kategori, type Pemasok, type HargaTingkat, type StokBatch } from '@/types/produk';
+import { db } from '@/lib/db';
+import { processSyncQueue, pullAndStoreAll } from '@/lib/sync';
 
 export interface NotifItem {
   id: number;
@@ -74,6 +77,7 @@ const DataContext = createContext<DataContextType | null>(null);
 const STORAGE_PREFIX = 'tokiva_db_';
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [initialized, setInitialized] = useState(false);
   const [produkList, setProdukList] = useState<Produk[]>([]);
   const [kategoriList, setKategoriList] = useState<Kategori[]>([]);
@@ -112,167 +116,151 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Fetch all data from backend to synchronize state
   const loadBackendData = useCallback(async () => {
     try {
-      // 1. Fetch Categories
-      const katResp = await fetchWithAuth('/api/kategori?limit=100');
-      if (katResp.ok) {
-        const katJson = await katResp.json();
-        if (katJson.sukses && Array.isArray(katJson.data)) {
-          setKategoriList(katJson.data);
-          localStorage.setItem(STORAGE_PREFIX + 'kategori', JSON.stringify(katJson.data));
-        }
+      // 1. Jalankan sinkronisasi data lokal ke cloud terlebih dahulu
+      const syncSuccess = await processSyncQueue();
+
+      // 2. Jika sinkronisasi sukses (atau antrian kosong) dan online, ambil data terbaru
+      if (syncSuccess && navigator.onLine) {
+        await pullAndStoreAll();
       }
 
-      // 2. Fetch Products
-      const prodResp = await fetchWithAuth('/api/produk?limit=1000');
-      if (prodResp.ok) {
-        const prodJson = await prodResp.json();
-        if (prodJson.sukses && Array.isArray(prodJson.data)) {
-          const localEmbeddingsStr = localStorage.getItem('tokiva_foto_embeddings');
-          const localEmbeddings = localEmbeddingsStr ? JSON.parse(localEmbeddingsStr) : {};
-          const mergedProducts = prodJson.data.map((p: any) => ({
-            ...p,
-            foto_embedding: localEmbeddings[p.id] || null
-          }));
-          setProdukList(mergedProducts);
-          // Strip embeddings when saving to local storage product cache
-          const baseProducts = prodJson.data.map(({ foto_embedding, ...rest }: any) => rest);
-          localStorage.setItem(STORAGE_PREFIX + 'produk', JSON.stringify(baseProducts));
-          
-          // Sync tiered prices since they are nested in products
-          const allHargaTingkat: HargaTingkat[] = [];
-          prodJson.data.forEach((p: any) => {
-            if (Array.isArray(p.harga_tingkat)) {
-              allHargaTingkat.push(...p.harga_tingkat);
-            }
-          });
-          setHargaTingkatList(allHargaTingkat);
-          localStorage.setItem(STORAGE_PREFIX + 'harga_tingkat', JSON.stringify(allHargaTingkat));
-        }
-      }
+      // 3. Muat data dari Dexie DB ke React state (untuk update UI)
+      const [p, k, m, s, h, t, b] = await Promise.all([
+        db.produk.toArray(),
+        db.kategori.toArray(),
+        db.pelanggan.toArray(),
+        db.pemasok.toArray(),
+        db.hargaTingkat.toArray(),
+        db.transaksi.toArray(),
+        db.stokBatch.toArray()
+      ]);
 
-      // 3. Fetch Suppliers
-      const supResp = await fetchWithAuth('/api/supplier?limit=100');
-      if (supResp.ok) {
-        const supJson = await supResp.json();
-        if (supJson.sukses && Array.isArray(supJson.data)) {
-          setPemasokList(supJson.data);
-          localStorage.setItem(STORAGE_PREFIX + 'pemasok', JSON.stringify(supJson.data));
-        }
-      }
+      const localEmbeddingsStr = localStorage.getItem('tokiva_foto_embeddings');
+      const localEmbeddings = localEmbeddingsStr ? JSON.parse(localEmbeddingsStr) : {};
+      const mergedProducts = p.map((prod: any) => ({
+        ...prod,
+        foto_embedding: localEmbeddings[prod.id] || null
+      }));
 
-      // 4. Fetch Members/Pelanggan
-      const memResp = await fetchWithAuth('/api/member?limit=1000');
-      if (memResp.ok) {
-        const memJson = await memResp.json();
-        if (memJson.sukses && Array.isArray(memJson.data)) {
-          setPelangganList(memJson.data);
-          localStorage.setItem(STORAGE_PREFIX + 'pelanggan', JSON.stringify(memJson.data));
-        }
-      }
+      setProdukList(mergedProducts);
+      setKategoriList(k);
+      setPelangganList(m);
+      setPemasokList(s);
+      setHargaTingkatList(h);
+      setTransaksiList(t);
+      setStokBatchList(b);
 
-      // 5. Fetch Transactions
-      const txResp = await fetchWithAuth('/api/transaksi?limit=1000');
-      if (txResp.ok) {
-        const txJson = await txResp.json();
-        if (txJson.sukses && Array.isArray(txJson.data)) {
-          setTransaksiList(txJson.data);
-          localStorage.setItem(STORAGE_PREFIX + 'transaksi', JSON.stringify(txJson.data));
-        }
-      }
-
-      // 6. Fetch Stock Batches
-      const batchResp = await fetchWithAuth('/api/stok/batches?limit=1000');
-      if (batchResp.ok) {
-        const batchJson = await batchResp.json();
-        if (batchJson.sukses && Array.isArray(batchJson.data)) {
-          setStokBatchList(batchJson.data);
-          localStorage.setItem(STORAGE_PREFIX + 'stok_batch', JSON.stringify(batchJson.data));
-        }
-      }
-
-      // 7. Fetch Active Shift
-      const shiftResp = await fetchWithAuth('/api/shift/aktif');
-      if (shiftResp.ok) {
-        const shiftJson = await shiftResp.json();
-        if (shiftJson.sukses && shiftJson.data) {
-          const shiftData = {
-            id: shiftJson.data.id,
-            kasir: shiftJson.data.user?.nama || 'Kasir',
-            waktuBuka: shiftJson.data.waktu_buka,
-            waktuTutup: null,
-            modalAwal: Number(shiftJson.data.modal_awal),
-            uangSistem: Number(shiftJson.data.modal_awal),
-            uangFisik: null,
-            selisih: null,
-            status: 'buka',
-          };
-          setShiftAktif(shiftData);
-          localStorage.setItem('tokiva_shift_aktif', JSON.stringify(shiftData));
+      // 4. Cek Shift Aktif dari backend (karena shift tidak di-caching permanen di Dexie)
+      if (navigator.onLine) {
+        const shiftResp = await fetchWithAuth('/api/shift/aktif');
+        if (shiftResp.ok) {
+          const shiftJson = await shiftResp.json();
+          if (shiftJson.sukses && shiftJson.data) {
+            const shiftData = {
+              id: shiftJson.data.id,
+              kasir: shiftJson.data.user?.nama || 'Kasir',
+              waktuBuka: shiftJson.data.waktu_buka,
+              waktuTutup: null,
+              modalAwal: Number(shiftJson.data.modal_awal),
+              uangSistem: Number(shiftJson.data.modal_awal),
+              uangFisik: null,
+              selisih: null,
+              status: 'buka',
+            };
+            setShiftAktif(shiftData);
+            localStorage.setItem('tokiva_shift_aktif', JSON.stringify(shiftData));
+          } else {
+            setShiftAktif(null);
+            localStorage.removeItem('tokiva_shift_aktif');
+          }
         } else {
           setShiftAktif(null);
           localStorage.removeItem('tokiva_shift_aktif');
         }
-      } else {
-        setShiftAktif(null);
-        localStorage.removeItem('tokiva_shift_aktif');
       }
     } catch (err) {
       console.error('Gagal menyinkronkan data dengan backend:', err);
     }
   }, [fetchWithAuth]);
 
-  // Load from localStorage on mount (immediate screen render)
+  // Load dari Dexie DB saat komponen mount
   useEffect(() => {
-    try {
-      const p = localStorage.getItem(STORAGE_PREFIX + 'produk');
-      const localEmbeddingsStr = localStorage.getItem('tokiva_foto_embeddings');
-      const localEmbeddings = localEmbeddingsStr ? JSON.parse(localEmbeddingsStr) : {};
-      
-      const parsedProducts = p ? JSON.parse(p) : [];
-      const mergedProducts = parsedProducts.map((prod: any) => ({
-        ...prod,
-        foto_embedding: localEmbeddings[prod.id] || null
-      }));
+    async function loadLocalCache() {
+      try {
+        const [p, k, m, s, h, t, b] = await Promise.all([
+          db.produk.toArray(),
+          db.kategori.toArray(),
+          db.pelanggan.toArray(),
+          db.pemasok.toArray(),
+          db.hargaTingkat.toArray(),
+          db.transaksi.toArray(),
+          db.stokBatch.toArray()
+        ]);
 
-      const k = localStorage.getItem(STORAGE_PREFIX + 'kategori');
-      const m = localStorage.getItem(STORAGE_PREFIX + 'pelanggan');
-      const s = localStorage.getItem(STORAGE_PREFIX + 'pemasok');
-      const h = localStorage.getItem(STORAGE_PREFIX + 'harga_tingkat');
-      const t = localStorage.getItem(STORAGE_PREFIX + 'transaksi');
-      const b = localStorage.getItem(STORAGE_PREFIX + 'stok_batch');
+        const localEmbeddingsStr = localStorage.getItem('tokiva_foto_embeddings');
+        const localEmbeddings = localEmbeddingsStr ? JSON.parse(localEmbeddingsStr) : {};
+        const mergedProducts = p.map((prod: any) => ({
+          ...prod,
+          foto_embedding: localEmbeddings[prod.id] || null
+        }));
 
-      setProdukList(mergedProducts);
-      setKategoriList(k ? JSON.parse(k) : []);
-      setPelangganList(m ? JSON.parse(m) : []);
-      setPemasokList(s ? JSON.parse(s) : []);
-      setHargaTingkatList(h ? JSON.parse(h) : []);
-      setTransaksiList(t ? JSON.parse(t) : []);
-      setStokBatchList(b ? JSON.parse(b) : []);
+        setProdukList(mergedProducts);
+        setKategoriList(k);
+        setPelangganList(m);
+        setPemasokList(s);
+        setHargaTingkatList(h);
+        setTransaksiList(t);
+        setStokBatchList(b);
 
-      const activeShiftStr = localStorage.getItem('tokiva_shift_aktif');
-      if (activeShiftStr) {
-        setShiftAktif(JSON.parse(activeShiftStr));
+        const activeShiftStr = localStorage.getItem('tokiva_shift_aktif');
+        if (activeShiftStr) {
+          setShiftAktif(JSON.parse(activeShiftStr));
+        }
+        
+        const rnKeys = localStorage.getItem('tokiva_read_notification_keys');
+        setReadNotificationKeys(rnKeys ? JSON.parse(rnKeys) : []);
+      } catch (e) {
+        console.error('Gagal memuat database local (Dexie)', e);
+      } finally {
+        setInitialized(true);
       }
-      
-      const rnKeys = localStorage.getItem('tokiva_read_notification_keys');
-      setReadNotificationKeys(rnKeys ? JSON.parse(rnKeys) : []);
-    } catch (e) {
-      console.error('Gagal memuat database local', e);
-    } finally {
-      setInitialized(true);
     }
+    loadLocalCache();
   }, []);
 
-  // Sync with backend once initialized and authenticated
+  // Sync dengan backend ketika initialized menjadi true ATAU pathname berubah (misal setelah login)
   useEffect(() => {
     if (initialized) {
       loadBackendData();
     }
-  }, [initialized, loadBackendData]);
+  }, [initialized, pathname, loadBackendData]);
 
-  // Save changes to localStorage helper
-  const saveToStorage = useCallback((key: string, data: any) => {
-    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(data));
+  // Simpan data dari React state ke Dexie DB (helper)
+  const saveToStorage = useCallback(async (key: string, data: any) => {
+    try {
+      if (key === 'produk') {
+        const baseProducts = data.map(({ foto_embedding, ...rest }: any) => rest);
+        await db.produk.clear();
+        await db.produk.bulkPut(baseProducts);
+      } else if (key === 'kategori') {
+        await db.kategori.clear();
+        await db.kategori.bulkPut(data);
+      } else if (key === 'pelanggan') {
+        await db.pelanggan.clear();
+        await db.pelanggan.bulkPut(data);
+      } else if (key === 'pemasok') {
+        await db.pemasok.clear();
+        await db.pemasok.bulkPut(data);
+      } else if (key === 'transaksi') {
+        await db.transaksi.clear();
+        await db.transaksi.bulkPut(data);
+      } else if (key === 'stok_batch') {
+        await db.stokBatch.clear();
+        await db.stokBatch.bulkPut(data);
+      }
+    } catch (e) {
+      console.error(`Gagal menyimpan ${key} ke Dexie:`, e);
+    }
   }, []);
 
   // Dynamic notifications list
@@ -445,6 +433,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const { foto_embedding, ...rest } = p;
     
     let uploadStatus = "";
+    let newId = 0;
     if (rest.foto_url) {
       try {
         const uploadedUrl = await uploadImagesIfNeeded(rest.foto_url, rest.kode);
@@ -458,7 +447,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    let newId = 0;
     try {
       const resp = await fetchWithAuth('/api/produk', {
         method: 'POST',
@@ -480,22 +468,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setProdukList((prev) => prev.map(prod => prod.id === newId ? { ...prod, foto_embedding } : prod));
         }
         return { sukses: true, lokal: false, pesan: "Produk berhasil ditambahkan ke cloud" + uploadStatus };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal menambahkan produk ke database';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal tambah produk ke backend, fallback ke lokal:', e);
     }
 
-    setProdukList((prev) => {
-      const generatedId = prev.length > 0 ? Math.max(...prev.map((item) => item.id)) + 1 : 1;
-      const now = new Date().toISOString();
-      const newProduk: Produk = {
-        ...rest,
-        id: generatedId,
-        created_at: now,
-        updated_at: now,
-        deleted_at: null,
-      };
+    const generatedId = Date.now();
+    const now = new Date().toISOString();
+    const newProduk: Produk = {
+      ...rest,
+      id: generatedId,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
 
+    await db.pendingSync.add({
+      action: 'CREATE',
+      table: 'produk',
+      recordId: String(generatedId),
+      data: rest,
+      createdAt: Date.now()
+    });
+
+    setProdukList((prev) => {
       if (foto_embedding) {
         const localEmbeddingsStr = localStorage.getItem('tokiva_foto_embeddings');
         const localEmbeddings = localEmbeddingsStr ? JSON.parse(localEmbeddingsStr) : {};
@@ -547,10 +547,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setProdukList((prev) => prev.map(prod => prod.id === id ? { ...prod, foto_embedding } : prod));
         }
         return { sukses: true, lokal: false, pesan: "Produk berhasil diperbarui di cloud" + uploadStatus };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal memperbarui produk di database';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal update produk ke backend, fallback ke lokal:', e);
     }
+
+    await db.pendingSync.add({
+      action: 'UPDATE',
+      table: 'produk',
+      recordId: String(id),
+      data: rest,
+      createdAt: Date.now()
+    });
 
     setProdukList((prev) => {
       const now = new Date().toISOString();
@@ -588,6 +600,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.error('Gagal hapus produk dari backend, fallback ke lokal:', e);
     }
 
+    await db.pendingSync.add({
+      action: 'DELETE',
+      table: 'produk',
+      recordId: String(id),
+      data: null,
+      createdAt: Date.now()
+    });
+
     setProdukList((prev) => {
       const now = new Date().toISOString();
       const updated = prev.map((item) =>
@@ -608,14 +628,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal membuat kategori';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal tambah kategori ke backend, fallback ke lokal:', e);
     }
 
+    const newId = Date.now();
+    await db.pendingSync.add({
+      action: 'CREATE',
+      table: 'kategori',
+      recordId: String(newId),
+      data: k,
+      createdAt: Date.now()
+    });
+
     setKategoriList((prev) => {
-      const newId = prev.length > 0 ? Math.max(...prev.map((item) => item.id)) + 1 : 1;
       const now = new Date().toISOString();
       const newKat: Kategori = {
         ...k,
@@ -627,6 +659,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('kategori', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Kategori disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   const updateKategori = useCallback(async (id: number, k: Partial<Kategori>) => {
@@ -637,11 +670,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal memperbarui kategori';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal update kategori ke backend, fallback ke lokal:', e);
     }
+
+    await db.pendingSync.add({
+      action: 'UPDATE',
+      table: 'kategori',
+      recordId: String(id),
+      data: k,
+      createdAt: Date.now()
+    });
 
     setKategoriList((prev) => {
       const now = new Date().toISOString();
@@ -651,6 +696,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('kategori', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Perubahan kategori disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   const hapusKategori = useCallback(async (id: number) => {
@@ -670,6 +716,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.error('Gagal hapus kategori dari backend, fallback ke lokal:', e);
     }
 
+    await db.pendingSync.add({
+      action: 'DELETE',
+      table: 'kategori',
+      recordId: String(id),
+      data: null,
+      createdAt: Date.now()
+    });
+
     setKategoriList((prev) => {
       const updated = prev.filter((item) => item.id !== id);
       saveToStorage('kategori', updated);
@@ -687,14 +741,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal menambah pelanggan';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal tambah pelanggan ke backend, fallback ke lokal:', e);
     }
 
+    const newId = Date.now();
+    await db.pendingSync.add({
+      action: 'CREATE',
+      table: 'pelanggan',
+      recordId: String(newId),
+      data: p,
+      createdAt: Date.now()
+    });
+
     setPelangganList((prev) => {
-      const newId = prev.length > 0 ? Math.max(...prev.map((item) => item.id)) + 1 : 1;
       const now = new Date().toISOString();
       const newPel: Pelanggan = {
         ...p,
@@ -706,6 +772,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('pelanggan', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Pelanggan disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   const updatePelanggan = useCallback(async (id: number, p: Partial<Pelanggan>) => {
@@ -716,11 +783,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal memperbarui pelanggan';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal update pelanggan ke backend, fallback ke lokal:', e);
     }
+
+    await db.pendingSync.add({
+      action: 'UPDATE',
+      table: 'pelanggan',
+      recordId: String(id),
+      data: p,
+      createdAt: Date.now()
+    });
 
     setPelangganList((prev) => {
       const now = new Date().toISOString();
@@ -730,6 +809,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('pelanggan', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Perubahan pelanggan disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   // Pemasok Actions
@@ -741,14 +821,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal menambah supplier';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal tambah pemasok ke backend, fallback ke lokal:', e);
     }
 
+    const newId = Date.now();
+    await db.pendingSync.add({
+      action: 'CREATE',
+      table: 'pemasok',
+      recordId: String(newId),
+      data: p,
+      createdAt: Date.now()
+    });
+
     setPemasokList((prev) => {
-      const newId = prev.length > 0 ? Math.max(...prev.map((item) => item.id)) + 1 : 1;
       const now = new Date().toISOString();
       const newPem: Pemasok = {
         ...p,
@@ -760,6 +852,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('pemasok', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Supplier disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   const updatePemasok = useCallback(async (id: number, p: Partial<Pemasok>) => {
@@ -770,11 +863,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal memperbarui supplier';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal update pemasok ke backend, fallback ke lokal:', e);
     }
+
+    await db.pendingSync.add({
+      action: 'UPDATE',
+      table: 'pemasok',
+      recordId: String(id),
+      data: p,
+      createdAt: Date.now()
+    });
 
     setPemasokList((prev) => {
       const now = new Date().toISOString();
@@ -784,6 +889,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       saveToStorage('pemasok', updated);
       return updated;
     });
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Perubahan supplier disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   // Hapus Pemasok
@@ -803,6 +909,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error('Gagal hapus pemasok dari backend, fallback ke lokal:', e);
     }
+
+    await db.pendingSync.add({
+      action: 'DELETE',
+      table: 'pemasok',
+      recordId: String(id),
+      data: null,
+      createdAt: Date.now()
+    });
 
     setPemasokList((prev) => {
       const updated = prev.filter((item) => item.id !== id);
@@ -830,6 +944,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.error('Gagal hapus pelanggan dari backend, fallback ke lokal:', e);
     }
 
+    await db.pendingSync.add({
+      action: 'DELETE',
+      table: 'pelanggan',
+      recordId: String(id),
+      data: null,
+      createdAt: Date.now()
+    });
+
     setPelangganList((prev) => {
       const updated = prev.filter((item) => item.id !== id);
       saveToStorage('pelanggan', updated);
@@ -840,44 +962,60 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Transaksi Actions
   const tambahTransaksi = useCallback(async (t: Omit<Transaksi, 'id' | 'created_at' | 'deleted_at'>) => {
-    try {
-      const items = t.detail?.map((d) => ({
-        produk_id: d.produk_id,
-        qty: d.qty,
-        diskon_id: d.diskon_id,
-      })) || [];
-      const pembayaran = t.pembayaran?.map((p) => ({
-        metode: p.metode,
-        nominal: p.nominal,
-        referensi: p.referensi,
-      })) || [];
+    const items = t.detail?.map((d) => ({
+      produk_id: d.produk_id,
+      qty: d.qty,
+      diskon_id: d.diskon_id,
+    })) || [];
+    const pembayaran = t.pembayaran?.map((p) => ({
+      metode: p.metode,
+      nominal: p.nominal,
+      referensi: p.referensi,
+    })) || [];
 
+    const txDataForApi = {
+      member_id: t.member_id,
+      items,
+      pembayaran,
+      catatan: t.catatan,
+      local_id: t.local_id,
+      tanggal: t.tanggal,
+      waktu: t.waktu,
+    };
+
+    try {
       const resp = await fetchWithAuth('/api/transaksi', {
         method: 'POST',
-        body: JSON.stringify({
-          member_id: t.member_id,
-          items,
-          pembayaran,
-          catatan: t.catatan,
-          local_id: t.local_id,
-        }),
+        body: JSON.stringify(txDataForApi),
       });
       if (resp.ok) {
         await loadBackendData();
-        return;
+        return { sukses: true, lokal: false };
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        const errMsg = errJson?.pesan || 'Gagal membuat transaksi';
+        return { sukses: false, lokal: false, pesan: errMsg };
       }
     } catch (e) {
       console.error('Gagal tambah transaksi ke backend, fallback ke lokal:', e);
     }
 
     const now = new Date().toISOString();
-    const newId = Date.now(); // local numeric ID
+    const newId = Date.now();
     const newTx: Transaksi = {
       ...t,
       id: newId,
       created_at: now,
       deleted_at: null,
     };
+
+    await db.pendingSync.add({
+      action: 'CREATE',
+      table: 'transaksi',
+      recordId: String(newId),
+      data: txDataForApi,
+      createdAt: Date.now()
+    });
     
     // Simpan Transaksi Lokal
     setTransaksiList((prev) => {
@@ -923,6 +1061,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return updatedPel;
       });
     }
+
+    return { sukses: true, lokal: true, pesan: "Koneksi offline. Transaksi disimpan lokal" };
   }, [saveToStorage, fetchWithAuth, loadBackendData]);
 
   const bukaShift = useCallback(async (modalAwal: number, catatan: string | null) => {

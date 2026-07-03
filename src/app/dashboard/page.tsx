@@ -19,7 +19,7 @@ export default function HalamanDashboard() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
         const authDataStr = localStorage.getItem('tokiva_auth');
         let token = '';
         if (authDataStr) {
@@ -34,17 +34,24 @@ export default function HalamanDashboard() {
           ...(token && { 'Authorization': `Bearer ${token}` }),
         };
 
-        // Fetch summary
+        console.log('[Dashboard Info] Fetching summary from:', `${baseUrl}/api/dashboard/summary`);
         const resp = await fetch(`${baseUrl}/api/dashboard/summary`, { headers });
+        console.log('[Dashboard Info] Fetch summary status:', resp.status);
+        
         if (resp.ok) {
           const json = await resp.json();
+          console.log('[Dashboard Info] Fetch summary data:', json);
           if (json.sukses) {
             setSummary(json.data);
           }
+        } else {
+          const errText = await resp.text().catch(() => '');
+          console.error('[Dashboard Error] Failed to fetch summary. Status:', resp.status, 'Error:', errText);
         }
 
         // Fetch active shift if user is cashier
         if (pengguna && pengguna.role !== 'admin') {
+          console.log('[Dashboard Info] Fetching active shift...');
           const shiftResp = await fetch(`${baseUrl}/api/shift/aktif`, { headers });
           if (shiftResp.ok) {
             const json = await shiftResp.json();
@@ -54,7 +61,7 @@ export default function HalamanDashboard() {
           }
         }
       } catch (e) {
-        console.error('Gagal mengambil data dashboard:', e);
+        console.error('[Dashboard Error] Exception during fetchDashboardData:', e);
       } finally {
         setSedangMemuat(false);
       }
@@ -388,21 +395,27 @@ export default function HalamanDashboard() {
           </h2>
           <div className="flex items-end gap-2 h-40">
             {dataChart.map((d: any) => {
-              const height = (d.omzet / maxOmzet) * 100;
+              const heightPercent = (d.omzet / maxOmzet) * 100;
               return (
-                <div key={d.hari} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-bold" style={{ color: 'var(--text-tertiary)' }}>
+                <div key={d.hari} className="flex-1 flex flex-col items-center justify-end h-full">
+                  {/* Label nilai di atas bar */}
+                  <span className="text-[9px] font-bold mb-1 shrink-0" style={{ color: 'var(--text-tertiary)' }}>
                     {formatRupiahSingkat(d.omzet)}
                   </span>
-                  <div
-                    className="w-full rounded-t-md transition-all duration-500 hover:opacity-80 cursor-pointer"
-                    style={{
-                      height: `${height}%`,
-                      background: 'var(--primary-gradient)',
-                      minHeight: '8px',
-                    }}
-                  />
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>
+                  
+                  {/* Area Bar dengan tinggi tetap agar persentase tinggi bar anak terhitung tepat */}
+                  <div className="w-full h-24 flex items-end justify-center">
+                    <div
+                      className="w-full rounded-t-md transition-all duration-500 hover:opacity-85 cursor-pointer"
+                      style={{
+                        height: `${Math.max(heightPercent, 6)}%`, // Minimal 6% biar kelihatan landasannya
+                        background: d.omzet > 0 ? 'var(--primary-gradient)' : 'rgba(255,255,255,0.06)',
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Label Tanggal */}
+                  <span className="text-[10px] sm:text-xs font-semibold mt-1.5 shrink-0" style={{ color: 'var(--text-tertiary)' }}>
                     {d.hari}
                   </span>
                 </div>
